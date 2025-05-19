@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <script>
+        function initApp() {
+            // Inicializa la aplicación y carga los componentes necesarios
+            loadSidebar();
+            loadUserTable();
+        }
+
+        function loadSidebar() {
+            // Carga el componente de la barra lateral
+            google.script.run.withSuccessHandler(function(html) {
+                document.getElementById('sidebar').innerHTML = html;
+            }).getSidebar();
+        }
+
+        function loadUserTable() {
+            // Carga el componente de la tabla de usuarios
+            google.script.run.withSuccessHandler(function(html) {
+                document.getElementById('userTable').innerHTML = html;
+            }).getUserTable();
+        }
+
+        window.onload = initApp;
+    </script>
+</head>
+<body>
+    <div id="sidebar"></div>
+    <div id="userTable"></div>
+</body>
+</html>

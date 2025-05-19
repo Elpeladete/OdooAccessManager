@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Permisos Odoo</title>
+    <link rel="stylesheet" href="css/style.html">
+    <script src="js/main.html" defer></script>
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Gestor de Permisos Odoo</h1>
+        </header>
+        <div class="container">
+            <aside id="sidebar">
+                <!-- Componente de barra lateral -->
+                <?!= HtmlService.createHtmlOutputFromFile('components/sidebar.html').getContent() ?>
+            </aside>
+            <main id="main-content">
+                <!-- Componente de tabla de usuarios -->
+                <?!= HtmlService.createHtmlOutputFromFile('components/userTable.html').getContent() ?>
+                <!-- Componente de formulario de permisos -->
+                <?!= HtmlService.createHtmlOutputFromFile('components/permissionForm.html').getContent() ?>
+            </main>
+        </div>
+    </div>
+</body>
+</html>

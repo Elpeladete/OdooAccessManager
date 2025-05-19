@@ -1,0 +1,28 @@
+<!-- 
+Este archivo contiene funciones utilitarias que se utilizan en toda la aplicación para facilitar tareas comunes.
+-->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Utilities</title>
+    <script>
+        function showAlert(message) {
+            alert(message);
+        }
+
+        function formatDate(date) {
+            const options = { year: 'numeric', month: 'long', day: 'numeric' };
+            return date.toLocaleDateString(undefined, options);
+        }
+
+        function isEmpty(value) {
+            return value === null || value === undefined || value.trim() === '';
+        }
+
+        // Add more utility functions as needed
+    </script>
+</head>
+<body>
+</body>
+</html>

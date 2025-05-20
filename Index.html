@@ -250,10 +250,12 @@
                     <div class="card-header bg-info text-white">
                         <i class="fas fa-user-cog me-2"></i>Detalles de Permisos
                     </div>
-                    <div class="card-body">
-                        <div class="row mb-3">
+                    <div class="card-body">                        <div class="row mb-3">
                             <div class="col">
                                 <h5 id="selectedUserName">Seleccione un usuario o grupo</h5>
+                                <div id="userInfo">
+                                    <!-- Información detallada del usuario -->
+                                </div>
                                 <div id="userBadges" class="d-flex flex-wrap gap-2">
                                     <!-- Badges de grupos asignados si es un usuario -->
                                 </div>
@@ -487,1477 +489,1954 @@
     </div>    <!-- Bootstrap JS y dependencias -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Script de comparación -->
-    <script src="comparison.js"></script>
-    <!-- Script principal -->
-    <script>let odooSessionId = null;
-        let odooUserId = null;
-        let allUsers = [];
-        let allGroups = [];
-        let allModules = [];
-        let allModelAccess = [];
-        let selectedUserId = null;
-        let selectedGroupId = null;
-        let selectedModelId = null;
+    <script>
+// Variables globales
+let allUsers = [];
+let allGroups = [];
+let odooSessionId = null;
+let selectedUserId = null;
 
-        document.addEventListener('DOMContentLoaded', function() {
-            showLoading('Autenticando con Odoo...');
-            
-            // Inicializar las pestañas de Bootstrap
-            const userTypeTabs = document.getElementById('userTypeTabs');
-            const tabElements = userTypeTabs.querySelectorAll('[data-bs-toggle="tab"]');
-            tabElements.forEach(element => {
-                element.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    bootstrap.Tab.getOrCreateInstance(element).show();
-                });
-            });
-            
-            // Inicializar tooltips de Bootstrap
-            const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-            const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => 
-                new bootstrap.Tooltip(tooltipTriggerEl)
-            );
-            
-            // Autenticar con Odoo y cargar datos
-            google.script.run
-                .withSuccessHandler(authResult => {
-                    if (authResult.success) {
-                        odooSessionId = authResult.sessionId;
-                        odooUserId = authResult.userId; // ID del usuario que ejecuta la app
-                        console.log('Autenticación exitosa. Session ID:', odooSessionId, 'User ID:', odooUserId);
-                        loadInitialData();
-                    } else {
-                        showError('Error de autenticación: ' + authResult.error);
-                        hideLoading();
-                    }
-                })
-                .withFailureHandler(error => {
-                    showError('Error de comunicación con el servidor: ' + error.message);
-                    hideLoading();
-                })
-                .authenticateWithOdoo();
+/**
+ * Funciones para la persistencia de selecciones del usuario mediante localStorage
+ */
 
-            setupEventListeners();
-        });
-
-        function showLoading(message = 'Cargando...') {
-            // Implementa una función visual para mostrar carga (ej. un spinner)
-            console.log(message);
-            const statusDiv = document.getElementById('statusMessage') || document.createElement('div');
-            statusDiv.id = 'statusMessage';
-            statusDiv.textContent = message;
-            statusDiv.style.position = 'fixed';
-            statusDiv.style.bottom = '10px';
-            statusDiv.style.left = '10px';
-            statusDiv.style.padding = '10px';
-            statusDiv.style.backgroundColor = '#ffc107';
-            statusDiv.style.zIndex = '1000';
-            document.body.appendChild(statusDiv);
-        }
-
-        function hideLoading() {
-            const statusDiv = document.getElementById('statusMessage');
-            if (statusDiv) {
-                statusDiv.remove();
-            }
-        }
-        
-        function showError(message) {
-            // Implementa una función visual para mostrar errores
-            console.error(message);
-            const errorDiv = document.getElementById('errorMessage') || document.createElement('div');
-            errorDiv.id = 'errorMessage';
-            errorDiv.textContent = message;
-            errorDiv.style.position = 'fixed';
-            errorDiv.style.top = '10px';
-            errorDiv.style.left = '10px';
-            errorDiv.style.padding = '10px';
-            errorDiv.style.backgroundColor = '#dc3545';
-            errorDiv.style.color = 'white';
-            errorDiv.style.zIndex = '1000';
-            document.body.appendChild(errorDiv);
-            setTimeout(() => errorDiv.remove(), 5000);
-        }        function loadInitialData() {
-            showLoading('Cargando datos iniciales...');
-            Promise.all([
-                new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getUsers(odooSessionId)),
-                new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getGroups(odooSessionId)),
-                new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getModules(odooSessionId)),
-                new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getModelAccess(odooSessionId))            ]).then(([users, groups, modules, modelAccess]) => {
-                console.log('Datos recibidos - Usuarios sin filtrar:', users.length);                
-                // Filtro adicional en el frontend para asegurar que no se incluyan clientes
-                // Este es un respaldo por si los filtros en el backend no son suficientes
-                const filteredUsers = users.filter(user => {
-                    // Verificar que el usuario tenga al menos un grupo asignado
-                    if (!user.groups_id || user.groups_id.length === 0) return false;
-                    
-                    // Verificar que el login no sea un correo personal común
-                    if (user.login && (
-                        user.login.includes('@gmail.com') || 
-                        user.login.includes('@hotmail.com') || 
-                        user.login.includes('@outlook.com') ||
-                        user.login.includes('@yahoo.com') ||
-                        user.login.includes('@live.com') ||
-                        user.login.includes('@mail.com') ||
-                        user.login.includes('@icloud.com') ||
-                        user.login.includes('@yahoo.es')
-                    )) return false;
-                    
-                    // Verificar patrones en el login que sugieran un cliente
-                    if (user.login && (
-                        user.login.startsWith('cliente') ||
-                        user.login.startsWith('clt') || 
-                        user.login.startsWith('cli') || 
-                        user.login.startsWith('customer') || 
-                        user.login.startsWith('client') || 
-                        user.login.includes('partner') ||
-                        user.login.includes('_clt') ||
-                        user.login.includes('_cli') ||
-                        user.login.includes('proveedor') ||
-                        user.login.includes('vendor')
-                    )) return false;
-                    
-                    // Verificar que no sea un nombre típico de cliente
-                    const clientKeywords = [
-                        'cliente', 'customer', 'proveedor', 'vendor', 'partner', 
-                        'company', 'empresa', 'corp', 'srl', 'sa de cv', 'ltda', 
-                        'sociedad', 'corporation', 'supplier'
-                    ];
-                    if (user.name && clientKeywords.some(keyword => 
-                        user.name.toLowerCase().includes(keyword)
-                    )) return false;
-                    
-                    // Verificar partner_id si está disponible
-                    if (user.partner_id && typeof user.partner_id[0] === 'number') {
-                        // Este criterio puede necesitar ajustes según la instalación específica de Odoo
-                        const partnerId = user.partner_id[0];
-                        if (partnerId > 100 && user.groups_id.length < 3) {
-                            // Si tiene un ID alto y pocos grupos, probablemente es un cliente
-                            return false;
-                        }
-                    }
-                    
-                    // Verificar si el nombre del usuario tiene formato típico de empresas
-                    // Por ejemplo: nombres muy largos, nombres con puntuación excesiva, todo en mayúsculas
-                    if (user.name) {
-                        // Nombres muy largos (más de 30 caracteres) suelen ser empresas
-                        if (user.name.length > 30 && user.groups_id.length < 3) return false;
-                        
-                        // Nombres completamente en mayúsculas
-                        if (user.name === user.name.toUpperCase() && user.name.length > 10 && user.groups_id.length < 3) return false;
-                        
-                        // Nombres con muchos números
-                        if (/\d{3,}/.test(user.name) && user.groups_id.length < 3) return false;
-                    }
-                    
-                    return true;
-                });
-                
-                console.log('Usuarios después de filtrado adicional:', filteredUsers.length);
-                
-                allUsers = filteredUsers;
-                allGroups = groups;
-                allModules = modules;
-                allModelAccess = modelAccess;
-                
-                console.log('Usuarios cargados:', allUsers.length);
-                console.log('Grupos cargados:', allGroups.length);
-                console.log('Módulos cargados:', allModules.length);
-                console.log('Permisos de acceso cargados:', allModelAccess.length);
-
-                // Aplicar filtro de "solo usuarios del sistema" por defecto
-                const systemUsers = allUsers.filter(user => isSystemUser(user));
-                console.log('Usuarios del sistema identificados:', systemUsers.length);
-                
-                populateUsersList(systemUsers);
-                populateGroupsList(allGroups);
-                populateModuleFilter(allModules);
-                hideLoading();
-                
-                // Mostrar información sobre la carga
-                showInfo(`Se han cargado ${allUsers.length} usuarios (${systemUsers.length} del sistema), ${allGroups.length} grupos y ${allModules.length} módulos.`);
-            }).catch(error => {
-                showError('Error cargando datos iniciales: ' + error.message);
-                hideLoading();
-            });
-        }
-
-        function setupEventListeners() {
-            // Filtro de búsqueda de usuarios
-            document.getElementById('userSearchInput').addEventListener('input', (e) => {
-                const searchTerm = e.target.value.toLowerCase();
-                filterUsers(searchTerm);
-            });
-            
-            // Botón para limpiar búsqueda
-            document.getElementById('userSearchClear').addEventListener('click', () => {
-                document.getElementById('userSearchInput').value = '';
-                filterUsers('');
-            });
-              // Botón de actualización
-            document.getElementById('refreshBtn').addEventListener('click', () => {
-                loadInitialData();
-            });
-            
-            // Botón de comparación de permisos
-            document.getElementById('compareBtn').addEventListener('click', () => {
-                toggleComparisonPanel();
-            });
-            
-            // Botón para cerrar panel de comparación
-            document.getElementById('closeComparisonBtn').addEventListener('click', () => {
-                toggleComparisonPanel();
-            });
-            
-            // Botón para ejecutar la comparación
-            document.getElementById('runComparisonBtn').addEventListener('click', () => {
-                runUsersComparison();
-            });
-            
-            // Filtro de mostrar sólo usuarios del sistema
-            document.getElementById('showOnlySystemUsers').addEventListener('change', (e) => {
-                const checked = e.target.checked;
-                const usersToShow = checked 
-                    ? allUsers.filter(user => isSystemUser(user)) 
-                    : allUsers;
-                populateUsersList(usersToShow);
-            });
-            
-            // Filtro de módulo para permisos
-            document.getElementById('moduleFilter').addEventListener('change', (e) => {
-                const moduleValue = e.target.value;
-                // Refrescar árbol de permisos con el módulo seleccionado
-                if (selectedUserId) {
-                    displayPermissionsTreeByModule(selectedUserId);
-                } else if (selectedGroupId) {
-                    displayPermissionsTreeByModule(null, selectedGroupId);
-                }
-            });
-            
-            // Filtro de búsqueda de permisos
-            document.getElementById('permissionSearchInput').addEventListener('input', (e) => {
-                const searchTerm = e.target.value.toLowerCase();
-                filterPermissionsTree(searchTerm);
-            });
-            
-            // Botón para guardar permisos
-            document.getElementById('savePermissionsBtn').addEventListener('click', () => {
-                saveModelPermissions();
-            });
-            
-            // Checkboxes de permisos
-            document.querySelectorAll('.permission-toggle').forEach(checkbox => {
-                checkbox.addEventListener('change', (e) => {
-                    // Opcional: Aquí se podría implementar lógica para validar combinaciones de permisos
-                    // Por ejemplo, si write está activado, read también debería estarlo
-                    const permType = e.target.getAttribute('data-perm-type');
-                    const isChecked = e.target.checked;
-                    
-                    if (permType === 'write' && isChecked && !document.getElementById('perm_read').checked) {
-                        document.getElementById('perm_read').checked = true;
-                        showInfo('Permiso de lectura activado automáticamente ya que es requerido para escritura.');
-                    }
-                    
-                    if (permType === 'create' && isChecked && !document.getElementById('perm_read').checked) {
-                        document.getElementById('perm_read').checked = true;
-                        showInfo('Permiso de lectura activado automáticamente ya que es requerido para creación.');
-                    }
-                });
-            });
-        }
-        
-        function filterUsers(searchTerm) {
-            const usersList = document.getElementById('usersList');
-            const groupsList = document.getElementById('groupsList');
-            const userItems = usersList.querySelectorAll('.user-item');
-            const groupItems = groupsList.querySelectorAll('.group-item');
-            
-            // Filtrar usuarios
-            userItems.forEach(item => {
-                const userName = item.textContent.toLowerCase();
-                if (searchTerm === '' || userName.includes(searchTerm)) {
-                    item.style.display = '';
-                } else {
-                    item.style.display = 'none';
-                }
-            });
-            
-            // Filtrar grupos
-            groupItems.forEach(item => {
-                const groupName = item.textContent.toLowerCase();
-                if (searchTerm === '' || groupName.includes(searchTerm)) {
-                    item.style.display = '';
-                } else {
-                    item.style.display = 'none';
-                }
-            });
-            
-            // Mostrar u ocultar los encabezados de categoría en la lista de grupos
-            const categoryHeaders = groupsList.querySelectorAll('.list-group-item.bg-light');
-            categoryHeaders.forEach(header => {
-                const nextSibling = header.nextElementSibling;
-                let hasVisibleGroup = false;
-                
-                // Comprobar si hay al menos un grupo visible después de este encabezado
-                let current = nextSibling;
-                while (current && !current.classList.contains('bg-light')) {
-                    if (current.style.display !== 'none' && current.classList.contains('group-item')) {
-                        hasVisibleGroup = true;
-                        break;
-                    }
-                    current = current.nextElementSibling;
-                }
-                
-                // Mostrar u ocultar el encabezado según si hay grupos visibles
-                header.style.display = hasVisibleGroup ? '' : 'none';
-            });
-        }
-        
-        function filterPermissionsTree(searchTerm) {
-            const moduleItems = document.querySelectorAll('.module-item');
-            
-            moduleItems.forEach(moduleItem => {
-                const moduleName = moduleItem.querySelector('strong').textContent.toLowerCase();
-                const modelItems = moduleItem.querySelectorAll('.model-item');
-                
-                let hasVisibleModel = false;
-                
-                modelItems.forEach(modelItem => {
-                    const modelName = modelItem.textContent.toLowerCase();
-                    if (searchTerm === '' || modelName.includes(searchTerm)) {
-                        modelItem.style.display = '';
-                        hasVisibleModel = true;
-                    } else {
-                        modelItem.style.display = 'none';
-                    }
-                });
-                
-                // Si el módulo coincide con la búsqueda, mostrar todos sus modelos
-                if (moduleName.includes(searchTerm)) {
-                    modelItems.forEach(modelItem => {
-                        modelItem.style.display = '';
-                    });
-                    hasVisibleModel = true;
-                    
-                    // Expandir el módulo automáticamente
-                    const modelsList = moduleItem.querySelector('.model-list');
-                    if (modelsList && searchTerm !== '') {
-                        bootstrap.Collapse.getOrCreateInstance(modelsList).show();
-                        moduleItem.classList.add('active');
-                    }
-                }
-                
-                // Mostrar u ocultar el módulo según si hay modelos visibles
-                moduleItem.style.display = hasVisibleModel ? '' : 'none';
-            });
-        }
-
-        function populateModuleFilter(modules) {
-            const moduleFilter = document.getElementById('moduleFilter');
-            // Limpiar opciones existentes excepto la primera (Todos los módulos)
-            while (moduleFilter.options.length > 1) {
-                moduleFilter.remove(1);
-            }
-            
-            // Ordenar módulos por categoría y luego por nombre para mejor organización
-            const sortedModules = [...modules].sort((a, b) => {
-                const catA = a.category_id ? a.category_id[1] : 'Uncategorized';
-                const catB = b.category_id ? b.category_id[1] : 'Uncategorized';
-                
-                if (catA !== catB) return catA.localeCompare(catB);
-                return a.shortdesc.localeCompare(b.shortdesc);
-            });
-            
-            // Agrupar módulos por categoría
-            const modulesByCategory = {};
-            sortedModules.forEach(module => {
-                const category = module.category_id ? module.category_id[1] : 'Sin categoría';
-                if (!modulesByCategory[category]) {
-                    modulesByCategory[category] = [];
-                }
-                modulesByCategory[category].push(module);
-            });
-            
-            // Crear optgroups por cada categoría
-            Object.keys(modulesByCategory).sort().forEach(category => {
-                const optgroup = document.createElement('optgroup');
-                optgroup.label = category;
-                
-                modulesByCategory[category].forEach(module => {
-                    const option = document.createElement('option');
-                    option.value = module.id;
-                    
-                    // Mostrar nombre descriptivo con conteo de modelos
-                    const modelCount = module.model_count || 0;
-                    const moduleName = module.shortdesc || module.name;
-                    option.textContent = `${moduleName} (${modelCount} modelos)`;
-                    
-                    // Añadir atributos data para usar en tooltips
-                    option.dataset.moduleName = module.name;
-                    option.dataset.moduleDescription = module.summary || '';
-                    option.dataset.moduleVersion = module.latest_version || '';
-                    option.dataset.moduleCategory = category;
-                    
-                    // Si es una aplicación principal, destacarla
-                    if (module.application) {
-                        option.classList.add('fw-bold');
-                    }
-                    
-                    optgroup.appendChild(option);
-                });
-                
-                moduleFilter.appendChild(optgroup);
-            });
-            
-            // Añadir event listener para manejar el cambio
-            moduleFilter.addEventListener('change', function() {
-                const moduleId = this.value;
-                if (moduleId) {
-                    const selectedOption = this.options[this.selectedIndex];
-                    const moduleName = selectedOption.dataset.moduleName;
-                    const moduleDesc = selectedOption.dataset.moduleDescription;
-                    
-                    // Actualizar el texto informativo
-                    document.getElementById('filterInfoText').innerHTML = 
-                        `Mostrando usuarios con acceso al módulo <strong>${selectedOption.textContent}</strong>`;
-                    
-                    // Ejecutar la búsqueda filtrada
-                    showModelAccessUsers(moduleId);
-                } else {
-                    // Si se selecciona "Todos los módulos", restaurar la lista de usuarios
-                    document.getElementById('filterInfoText').textContent = 
-                        'Selecciona un módulo o tipo de permiso para encontrar usuarios asociados.';
-                    populateUsersList(allUsers);
-                }
-            });
-        }        function selectUser(userId) {
-            selectedUserId = userId;
-            selectedGroupId = null; // Resetear selección de grupo
-            
-            const user = allUsers.find(u => u.id === userId);
-            if (!user) return;
-
-            // Limpiar selecciones previas
-            document.querySelectorAll('.user-item, .group-item').forEach(item => item.classList.remove('active'));
-            document.querySelector(`.user-item[data-user-id="${userId}"]`).classList.add('active');
-
-            document.getElementById('selectedUserName').textContent = `Usuario: ${user.name}`;
-            
-            // Mostrar badges de grupos asignados
-            const userBadgesContainer = document.getElementById('userBadges');
-            userBadgesContainer.innerHTML = '';
-            
-            // Obtener y mostrar los grupos asignados al usuario
-            const assignedGroups = user.groups_id.map(groupId => 
-                allGroups.find(g => g.id === groupId)
-            ).filter(g => g); // Filtrar null/undefined
-            
-            assignedGroups.forEach(group => {
-                const badgeItem = document.createElement('span');
-                badgeItem.className = 'badge bg-info text-dark';
-                badgeItem.textContent = group.name;
-                userBadgesContainer.appendChild(badgeItem);
-            });
-
-            // Mostrar permisos en el árbol por módulo
-            displayPermissionsTreeByModule(userId);
-
-            // Resetear el panel de permisos específicos
-            resetPermissionPanel();
-
-            // Actualizar texto informativo
-            document.getElementById('filterInfoText').innerHTML = 
-                `Usuario seleccionado: <strong>${user.name}</strong> (${user.login}) con ${user.groups_id.length} grupos`;
-        }
-
-        function selectGroup(groupId) {
-            selectedGroupId = groupId;
-            selectedUserId = null; // Resetear selección de usuario
-            
-            const group = allGroups.find(g => g.id === groupId);
-            if (!group) return;
-
-            // Limpiar selecciones previas
-            document.querySelectorAll('.user-item, .group-item').forEach(item => item.classList.remove('active'));
-            document.querySelector(`.group-item[data-group-id="${groupId}"]`).classList.add('active');
-
-            document.getElementById('selectedUserName').textContent = `Grupo: ${group.name}`;
-            
-            // Limpiar badges de usuario
-            document.getElementById('userBadges').innerHTML = '';
-            
-            // Mostrar número de usuarios asignados a este grupo
-            const usersInGroup = allUsers.filter(user => user.groups_id.includes(groupId));
-            if (usersInGroup.length > 0) {
-                const userCountBadge = document.createElement('span');
-                userCountBadge.className = 'badge bg-secondary';
-                userCountBadge.textContent = `${usersInGroup.length} usuarios asignados`;
-                document.getElementById('userBadges').appendChild(userCountBadge);
-            }
-
-            // Mostrar permisos en el árbol por módulo
-            displayPermissionsTreeByModule(null, groupId);
-
-            // Resetear el panel de permisos específicos
-            resetPermissionPanel();
-
-            // Actualizar texto informativo
-            document.getElementById('filterInfoText').innerHTML = 
-                `Grupo seleccionado: <strong>${group.name}</strong> con ${usersInGroup.length} usuarios`;
-        }
-        
-        function resetPermissionPanel() {
-            // Ocultar el checklist de permisos y mostrar mensaje informativo
-            document.getElementById('permissionChecklist').classList.add('d-none');
-            document.querySelector('#permissionDetailsContainer .alert').classList.remove('d-none');
-        }
-
-        function displayPermissionsTreeByModule(userId = null, groupId = null) {
-            if (!userId && !groupId) return;
-            
-            const permissionsTreeContainer = document.getElementById('permissionsTree');
-            permissionsTreeContainer.innerHTML = ''; // Limpiar árbol
-            
-            // Obtener permisos relevantes
-            let relevantAccess = [];
-            let effectiveGroupIds = new Set();
-            
-            if (userId) {
-                // Si es un usuario, obtener sus grupos y permisos
-                const user = allUsers.find(u => u.id === userId);
-                if (!user) return;
-                
-                // Incluir grupos heredados si está habilitada la opción
-                effectiveGroupIds = new Set(user.groups_id);
-                if (document.getElementById('showInheritedSwitch')?.checked) {
-                    user.groups_id.forEach(gId => {
-                        collectInheritedGroups(gId, effectiveGroupIds);
-                    });
-                }
-            } else if (groupId) {
-                // Si es un grupo, solo mostrar sus permisos directos
-                effectiveGroupIds.add(groupId);
-            }
-            
-            // Filtrar permisos por los grupos efectivos
-            relevantAccess = allModelAccess.filter(access => 
-                access.group_id && effectiveGroupIds.has(access.group_id[0])
-            );
-            
-            // Aplicar filtro de módulo si está seleccionado
-            const moduleFilterValue = document.getElementById('moduleFilter').value;
-            if (moduleFilterValue) {
-                relevantAccess = relevantAccess.filter(access => 
-                    access.model_id && 
-                    getModuleFromModel(access.model_id[1]) === moduleFilterValue
-                );
-            }
-            
-            // Organizar por módulo
-            const accessByModule = {};
-            relevantAccess.forEach(access => {
-                if (!access.model_id) return;
-                
-                const modelName = access.model_id[1];
-                const moduleName = getModuleFromModel(modelName);
-                
-                if (!accessByModule[moduleName]) {
-                    accessByModule[moduleName] = {};
-                }
-                
-                if (!accessByModule[moduleName][modelName]) {
-                    accessByModule[moduleName][modelName] = [];
-                }
-                
-                accessByModule[moduleName][modelName].push(access);
-            });
-            
-            // Crear el árbol de módulos y modelos
-            const modulesList = document.createElement('ul');
-            modulesList.className = 'list-unstyled';
-            
-            // Ordenar módulos alfabéticamente
-            const sortedModules = Object.keys(accessByModule).sort();
-            
-            sortedModules.forEach(moduleName => {
-                const moduleItem = document.createElement('li');
-                moduleItem.className = 'module-item';
-                moduleItem.setAttribute('data-module', moduleName);
-                
-                // Contar total de modelos y permisos en este módulo
-                const modelsInModule = Object.keys(accessByModule[moduleName]).length;
-                const totalPermissions = Object.values(accessByModule[moduleName])
-                    .flatMap(perms => perms).length;
-                
-                moduleItem.innerHTML = `
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <i class="fas fa-cube me-2"></i>
-                            <strong>${moduleName}</strong>
-                        </div>
-                        <div>
-                            <span class="badge bg-secondary me-1">${modelsInModule} modelos</span>
-                            <span class="badge bg-info">${totalPermissions} permisos</span>
-                        </div>
-                    </div>
-                `;
-                
-                // Lista de modelos para este módulo
-                const modelsList = document.createElement('ul');
-                modelsList.className = 'list-unstyled model-list collapse';
-                modelsList.id = `module-${moduleName.replace(/\s+/g, '-').toLowerCase()}`;
-                
-                // Ordenar modelos alfabéticamente
-                const sortedModels = Object.keys(accessByModule[moduleName]).sort();
-                
-                sortedModels.forEach(modelName => {
-                    const modelItem = document.createElement('li');
-                    modelItem.className = 'model-item';
-                    modelItem.setAttribute('data-model', modelName);
-                    
-                    // Obtener permisos para este modelo
-                    const modelAccess = accessByModule[moduleName][modelName];
-                    
-                    // Determinar qué permisos están disponibles
-                    const perms = {
-                        read: false,
-                        write: false,
-                        create: false,
-                        unlink: false
-                    };
-                    
-                    modelAccess.forEach(access => {
-                        if (access.perm_read) perms.read = true;
-                        if (access.perm_write) perms.write = true;
-                        if (access.perm_create) perms.create = true;
-                        if (access.perm_unlink) perms.unlink = true;
-                    });
-                    
-                    // Crear badges para los permisos
-                    let permBadges = '';
-                    if (perms.read) permBadges += '<span class="badge bg-success permission-badge">R</span>';
-                    if (perms.write) permBadges += '<span class="badge bg-warning text-dark permission-badge">W</span>';
-                    if (perms.create) permBadges += '<span class="badge bg-info text-dark permission-badge">C</span>';
-                    if (perms.unlink) permBadges += '<span class="badge bg-danger permission-badge">D</span>';
-                    
-                    modelItem.innerHTML = `
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>${modelName}</div>
-                            <div>${permBadges}</div>
-                        </div>
-                    `;
-                    
-                    // Al hacer clic en un modelo, mostrar sus permisos detallados
-                    modelItem.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        showModelPermissions(modelName, modelAccess, userId, groupId);
-                        
-                        // Marcar como activo
-                        document.querySelectorAll('.model-item').forEach(item => item.classList.remove('active'));
-                        modelItem.classList.add('active');
-                    });
-                    
-                    modelsList.appendChild(modelItem);
-                });
-                
-                // Al hacer clic en el módulo, expandir/colapsar sus modelos
-                moduleItem.addEventListener('click', () => {
-                    const collapseEl = bootstrap.Collapse.getOrCreateInstance(modelsList);
-                    collapseEl.toggle();
-                    
-                    // Marcar módulo como activo/inactivo
-                    moduleItem.classList.toggle('active');
-                });
-                
-                moduleItem.appendChild(modelsList);
-                modulesList.appendChild(moduleItem);
-            });
-            
-            permissionsTreeContainer.appendChild(modulesList);
-            
-            // Si no hay permisos, mostrar mensaje
-            if (sortedModules.length === 0) {
-                const noPermissionsMsg = document.createElement('div');
-                noPermissionsMsg.className = 'alert alert-warning';
-                noPermissionsMsg.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i>No se encontraron permisos para mostrar.';
-                permissionsTreeContainer.appendChild(noPermissionsMsg);
-            }
-        }
-
-        function displayPermissionsTree(userId) {
-            // ...existing code...
-        }
-        function showModelPermissions(modelName, accessList, userId = null, groupId = null) {
-            // Mostrar el checklist de permisos y ocultar mensaje informativo
-            document.getElementById('permissionChecklist').classList.remove('d-none');
-            document.querySelector('#permissionDetailsContainer .alert').classList.add('d-none');
-            
-            // Actualizar el nombre del modelo seleccionado
-            document.querySelector('#selectedModelName span').textContent = modelName;
-            
-            // Determinar permisos actuales
-            const perms = {
-                read: false,
-                write: false,
-                create: false,
-                unlink: false
-            };
-            
-            accessList.forEach(access => {
-                if (access.perm_read) perms.read = true;
-                if (access.perm_write) perms.write = true;
-                if (access.perm_create) perms.create = true;
-                if (access.perm_unlink) perms.unlink = true;
-            });
-            
-            // Actualizar los checkboxes según los permisos
-            document.getElementById('perm_read').checked = perms.read;
-            document.getElementById('perm_write').checked = perms.write;
-            document.getElementById('perm_create').checked = perms.create;
-            document.getElementById('perm_unlink').checked = perms.unlink;
-            
-            // Guardar referencias a los datos para cuando se guarden los cambios
-            document.getElementById('permissionChecklist').setAttribute('data-model', modelName);
-            if (userId) {
-                document.getElementById('permissionChecklist').setAttribute('data-user-id', userId);
-                document.getElementById('permissionChecklist').removeAttribute('data-group-id');
-            } else if (groupId) {
-                document.getElementById('permissionChecklist').setAttribute('data-group-id', groupId);
-                document.getElementById('permissionChecklist').removeAttribute('data-user-id');
-            }
-        }
-
-        function getModuleFromModel(modelName) {
-            // Extraer el nombre del módulo del nombre del modelo
-            // Por ejemplo, "res.users" pertenece al módulo "base"
-            const parts = modelName.split('.');
-            if (parts.length > 0) {
-                // Buscar si existe un módulo con este nombre
-                const matchingModule = allModules.find(m => 
-                    m.name === parts[0] || 
-                    m.name.replace('_', '.') === parts[0]
-                );
-                
-                if (matchingModule) {
-                    return matchingModule.shortdesc || matchingModule.name;
-                }
-            }
-            
-            return 'Otros'; // Módulo por defecto si no se puede determinar
-        }
-
-        function saveModelPermissions() {
-            const permissionChecklist = document.getElementById('permissionChecklist');
-            const modelName = permissionChecklist.getAttribute('data-model');
-            const userId = permissionChecklist.getAttribute('data-user-id');
-            const groupId = permissionChecklist.getAttribute('data-group-id');
-            
-            if (!modelName || (!userId && !groupId)) {
-                showError('Información incompleta para guardar permisos.');
-                return;
-            }
-            
-            // Obtener valores actuales de los checkboxes
-            const permissions = {
-                perm_read: document.getElementById('perm_read').checked,
-                perm_write: document.getElementById('perm_write').checked,
-                perm_create: document.getElementById('perm_create').checked,
-                perm_unlink: document.getElementById('perm_unlink').checked
-            };
-            
-            showLoading('Guardando permisos...');
-            
-            // Construir datos para enviar al servidor
-            const data = {
-                sessionId: odooSessionId,
-                modelName: modelName,
-                permissions: permissions
-            };
-            
-            if (userId) {
-                data.userId = userId;
-            } else if (groupId) {
-                data.groupId = groupId;
-            }
-            
-            // Llamar al servidor para actualizar permisos
-            google.script.run
-                .withSuccessHandler(result => {
-                    if (result.success) {
-                        showInfo('Permisos actualizados correctamente.');
-                        
-                        // Actualizar datos locales
-                        updateLocalModelAccess(modelName, userId, groupId, permissions);
-                        
-                        // Recargar el árbol de permisos
-                        if (userId) {
-                            displayPermissionsTreeByModule(userId);
-                        } else if (groupId) {
-                            displayPermissionsTreeByModule(null, groupId);
-                        }
-                    } else {
-                        showError('Error al actualizar permisos: ' + result.error);
-                    }
-                    hideLoading();
-                })
-                .withFailureHandler(error => {
-                    showError('Error al guardar permisos: ' + error.message);
-                    hideLoading();
-                })
-                .updateModelPermissions(data);
-        }
-        
-        function updateLocalModelAccess(modelName, userId, groupId, permissions) {
-            // Actualizar los datos locales para reflejar los cambios sin recargar
-            if (userId) {
-                const user = allUsers.find(u => u.id === parseInt(userId));
-                if (!user) return;
-                
-                // Para usuario, necesitamos actualizar permisos en sus grupos
-                user.groups_id.forEach(gId => {
-                    const accessList = allModelAccess.filter(access => 
-                        access.group_id && 
-                        access.group_id[0] === gId && 
-                        access.model_id && 
-                        access.model_id[1] === modelName
-                    );
-                    
-                    accessList.forEach(access => {
-                        access.perm_read = permissions.perm_read;
-                        access.perm_write = permissions.perm_write;
-                        access.perm_create = permissions.perm_create;
-                        access.perm_unlink = permissions.perm_unlink;
-                    });
-                });
-            } else if (groupId) {
-                // Para grupo, actualizamos directamente los permisos del grupo
-                const accessList = allModelAccess.filter(access => 
-                    access.group_id && 
-                    access.group_id[0] === parseInt(groupId) && 
-                    access.model_id && 
-                    access.model_id[1] === modelName
-                );
-                
-                accessList.forEach(access => {
-                    access.perm_read = permissions.perm_read;
-                    access.perm_write = permissions.perm_write;
-                    access.perm_create = permissions.perm_create;
-                    access.perm_unlink = permissions.perm_unlink;
-                });
-            }
-        }
-
-        function isSystemUser(user) {
-            // Sin grupos, probablemente no es un usuario del sistema
-            if (!user.groups_id || user.groups_id.length === 0) return false;
-            
-            // Usuarios del sistema tienen login que no es un email estándar
-            if (user.login && (
-                user.login.includes('@gmail.com') || 
-                user.login.includes('@hotmail.com') || 
-                user.login.includes('@outlook.com') ||
-                user.login.includes('@yahoo.com') ||
-                user.login.includes('@live.com') ||
-                user.login.includes('@yahoo.es') ||
-                user.login.includes('@icloud.com')
-            )) return false;
-            
-            // Verificar login con patrones típicos de clientes
-            if (user.login && (
-                user.login.startsWith('cliente') ||
-                user.login.startsWith('customer') ||
-                user.login.startsWith('proveedor') ||
-                user.login.startsWith('vendor') ||
-                user.login.startsWith('partner') ||
-                user.login.startsWith('clt_') ||
-                user.login.startsWith('cli_') ||
-                user.login.includes('_client') ||
-                user.login.includes('_customer')
-            )) return false;
-            
-            // Verificar nombres que podrían ser de clientes
-            const clientKeywords = [
-                'cliente', 'customer', 'proveedor', 'vendor', 'partner', 'supplier',
-                'partner_', 'clt_', 'cli_', 'company', 'empresa', 'sa de cv', 'srl', 
-                'sociedad', 'corporation'
-            ];
-            if (user.name && clientKeywords.some(keyword => 
-                user.name.toLowerCase().includes(keyword)
-            )) return false;
-            
-            // Comprobar el ID del partner - Los clientes suelen tener IDs más altos que los usuarios del sistema
-            if (user.partner_id && typeof user.partner_id[0] === 'number') {
-                const partnerId = user.partner_id[0];
-                // Los primeros 100 partners suelen ser usuarios del sistema o contactos especiales del sistema
-                if (partnerId > 100 && user.groups_id.length < 3) {
-                    // Si tiene un ID alto y pocos grupos, probablemente es un cliente
-                    return false;
-                }
-            }
-            
-            return true;
-        }
-
-        function showInfo(message) {
-            console.log(message);
-            const infoDiv = document.getElementById('infoMessage') || document.createElement('div');
-            infoDiv.id = 'infoMessage';
-            infoDiv.textContent = message;
-            infoDiv.style.position = 'fixed';
-            infoDiv.style.bottom = '10px';
-            infoDiv.style.right = '10px';
-            infoDiv.style.padding = '10px';
-            infoDiv.style.backgroundColor = '#28a745';
-            infoDiv.style.color = 'white';
-            infoDiv.style.zIndex = '1000';
-            document.body.appendChild(infoDiv);
-            setTimeout(() => infoDiv.remove(), 3000);
-        }
-
-        function populateUsersList(users) {
-            const usersList = document.getElementById('usersList');
-            usersList.innerHTML = ''; // Limpiar lista
-
-            // Ordenar usuarios por nombre para mejor visualización
-            const sortedUsers = [...users].sort((a, b) => a.name.localeCompare(b.name));
-            
-            // Añadir contador de usuarios
-            if (sortedUsers.length > 0) {
-                const countInfo = document.createElement('div');
-                countInfo.className = 'list-group-item bg-light text-center';
-                countInfo.innerHTML = `<small><strong>${sortedUsers.length}</strong> usuarios encontrados</small>`;
-                usersList.appendChild(countInfo);
-            } else {
-                const emptyInfo = document.createElement('div');
-                emptyInfo.className = 'list-group-item bg-light text-center';
-                emptyInfo.innerHTML = `<small>No se encontraron usuarios</small>`;
-                usersList.appendChild(emptyInfo);
-            }
-            
-            // Mostrar usuarios
-            sortedUsers.forEach(user => {
-                const userItem = document.createElement('div');
-                userItem.className = 'list-group-item user-item';
-                userItem.setAttribute('data-user-id', user.id);
-                userItem.setAttribute('data-user-type', 'user');
-                
-                // Determinar si es un usuario administrador/sistema
-                const isAdmin = user.is_admin || user.groups_id.length > 5; // Usuarios con muchos grupos o marcados como admin
-                
-                // Intentar mostrar el avatar
-                let avatarHtml = '<div class="user-avatar-placeholder me-2">';
-                if (user.image_1920) {
-                    // Usar imagen de Odoo si está disponible
-                    avatarHtml = `<img src="${user.image_1920}" alt="Avatar" class="img-fluid rounded-circle">`;
-                } else {
-                    // Avatar por defecto para usuarios sin imagen
-                    avatarHtml += `<i class="fas fa-user-circle fa-2x text-muted"></i>`;
-                }
-                avatarHtml += `</div>`;
-                
-                userItem.innerHTML = `
-                    <div class="d-flex align-items-center">
-                        ${avatarHtml}
-                        <div class="flex-grow-1">
-                            <div class="fw-bold">${user.name}</div>
-                            <div class="text-muted small">
-                                ${user.login} - ${user.groups_id.length} grupos
-                            </div>
-                        </div>
-                        <div>
-                            ${isAdmin ? '<span class="badge bg-danger">Admin</span>' : ''}
-                        </div>
-                    </div>
-                `;
-                
-                // Al hacer clic en un usuario, seleccionar y mostrar detalles
-                userItem.addEventListener('click', () => {
-                    selectUser(user.id);
-                });
-                
-                usersList.appendChild(userItem);
-            });
-        }
-
-        function populateGroupsList(groups) {
-            const groupsList = document.getElementById('groupsList');
-            groupsList.innerHTML = ''; // Limpiar lista
-            
-            // Ordenar grupos por nombre para mejor visualización
-            const sortedGroups = [...groups].sort((a, b) => a.name.localeCompare(b.name));
-            
-            // Añadir contador de grupos
-            if (sortedGroups.length > 0) {
-                const countInfo = document.createElement('div');
-                countInfo.className = 'list-group-item bg-light text-center';
-                countInfo.innerHTML = `<small><strong>${sortedGroups.length}</strong> grupos encontrados</small>`;
-                groupsList.appendChild(countInfo);
-            } else {
-                const emptyInfo = document.createElement('div');
-                emptyInfo.className = 'list-group-item bg-light text-center';
-                emptyInfo.innerHTML = `<small>No se encontraron grupos</small>`;
-                groupsList.appendChild(emptyInfo);
-            }
-            
-            // Mostrar grupos
-            sortedGroups.forEach(group => {
-                const groupItem = document.createElement('div');
-                groupItem.className = 'list-group-item group-item';
-                groupItem.setAttribute('data-group-id', group.id);
-                groupItem.setAttribute('data-group-type', 'group');
-                
-                groupItem.innerHTML = `
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <i class="fas fa-users me-2"></i>
-                            <strong>${group.name}</strong>
-                        </div>
-                        <div>
-                            <span class="badge bg-secondary">${group.users_count || 0} usuarios</span>
-                        </div>
-                    </div>
-                `;
-                
-                // Al hacer clic en un grupo, seleccionar y mostrar detalles
-                groupItem.addEventListener('click', () => {
-                    selectGroup(group.id);
-                });
-                
-                groupsList.appendChild(groupItem);
-            });
-        }
-// Función para determinar si un usuario es un usuario del sistema o no
-function isSystemUser(user) {
-    // Sin grupos, probablemente no es un usuario del sistema
-    if (!user.groups_id || user.groups_id.length === 0) return false;
+// Guarda la selección actual del usuario
+function saveUserSelection() {
+    if (!selectedUserId) return;
     
-    // Usuarios del sistema tienen login que no es un email estándar
-    if (user.login && (
-        user.login.includes('@gmail.com') || 
-        user.login.includes('@hotmail.com') || 
-        user.login.includes('@outlook.com') ||
-        user.login.includes('@yahoo.com') ||
-        user.login.includes('@live.com') ||
-        user.login.includes('@yahoo.es') ||
-        user.login.includes('@icloud.com')
-    )) return false;
+    const selectionData = {
+        userId: selectedUserId,
+        isGroup: document.querySelector('#usersList a.active') ? false : true,
+        timestamp: new Date().getTime()
+    };
     
-    // Verificar login con patrones típicos de clientes
-    if (user.login && (
-        user.login.startsWith('cliente') ||
-        user.login.startsWith('customer') ||
-        user.login.startsWith('proveedor') ||
-        user.login.startsWith('vendor') ||
-        user.login.startsWith('partner') ||
-        user.login.includes('cust_') ||
-        user.login.includes('client_')
-    )) return false;
-    
-    // Verificar nombre con patrones típicos de clientes
-    if (user.name && (
-        user.name.toLowerCase().includes('cliente') ||
-        user.name.toLowerCase().includes('customer') ||
-        user.name.toLowerCase().includes('proveedor') ||
-        user.name.toLowerCase().includes('vendor') ||
-        user.name.toLowerCase().includes('partner')
-    )) return false;
-    
-    // Si tiene pocos grupos (menos de 2) y no es administrador, probablemente es un cliente
-    if (user.groups_id.length < 2 && !user.is_admin) return false;
-    
-    return true;
+    localStorage.setItem('odooPermManager_lastSelection', JSON.stringify(selectionData));
 }
 
-// Función para recopilar grupos heredados
-function collectInheritedGroups(groupId, collectedGroups = new Set()) {
-    // Esta función recopila todos los grupos heredados recursivamente
-    const group = allGroups.find(g => g.id === groupId);
-    if (!group || !group.implied_ids) return collectedGroups;
+// Restaura la última selección del usuario
+function restoreUserSelection() {
+    const savedData = localStorage.getItem('odooPermManager_lastSelection');
+    if (!savedData) return false;
     
-    // Añadir grupos implícitos directos
-    group.implied_ids.forEach(impliedId => {
-        if (!collectedGroups.has(impliedId)) {
-            collectedGroups.add(impliedId);
-            // Recursivamente añadir grupos heredados de este grupo implícito
-            collectInheritedGroups(impliedId, collectedGroups);
+    try {
+        const selection = JSON.parse(savedData);
+        
+        // Verificar si los datos no están obsoletos (más de 1 día)
+        const oneDayMs = 24 * 60 * 60 * 1000;
+        if (new Date().getTime() - selection.timestamp > oneDayMs) {
+            localStorage.removeItem('odooPermManager_lastSelection');
+            return false;
         }
-    });
+        
+        // Seleccionar el elemento correspondiente
+        if (selection.isGroup) {
+            const groupItem = document.querySelector(`#groupsList a[data-group-id="${selection.userId}"]`);
+            if (groupItem) {
+                // Activar la pestaña de grupos
+                document.getElementById('groups-tab').click();
+                // Hacer clic en el grupo
+                groupItem.click();
+                return true;
+            }
+        } else {
+            const userItem = document.querySelector(`#usersList a[data-user-id="${selection.userId}"]`);
+            if (userItem) {
+                // Activar la pestaña de usuarios
+                document.getElementById('users-tab').click();
+                // Hacer clic en el usuario
+                userItem.click();
+                return true;
+            }
+        }
+    } catch (e) {
+        console.error('Error al restaurar selección:', e);
+        localStorage.removeItem('odooPermManager_lastSelection');
+    }
     
-    return collectedGroups;
+    return false;
 }
 
-// Función para mostrar/ocultar el panel de comparación
-function toggleComparisonPanel() {
-    const panel = document.getElementById('comparisonPanel');
-    if (panel.style.display === 'none') {
-        panel.style.display = 'block';
-        // Inicializar selectores de usuarios
-        populateUserSelects();
-        // Ocultar el panel de resultados hasta que se ejecute la comparación
-        document.getElementById('comparisonResultsContainer').style.display = 'none';
+// Guarda configuraciones de la interfaz (ej. filtros, vistas)
+function saveUISettings() {
+    const settings = {
+        showOnlySystemUsers: document.getElementById('showOnlySystemUsers').checked,
+        lastActiveTab: document.querySelector('#userTypeTabs .nav-link.active').id,
+        lastComparisonTab: document.querySelector('#comparisonTabs .nav-link.active')?.id || 'differences-tab',
+        filterText: document.getElementById('searchInput').value,
+        timestamp: new Date().getTime()
+    };
+    
+    localStorage.setItem('odooPermManager_uiSettings', JSON.stringify(settings));
+}
+
+// Restaura las configuraciones de la interfaz
+function restoreUISettings() {
+    const savedData = localStorage.getItem('odooPermManager_uiSettings');
+    if (!savedData) return false;
+    
+    try {
+        const settings = JSON.parse(savedData);
+        
+        // Verificar si los datos no están obsoletos (más de 7 días)
+        const sevenDaysMs =  7 * 24 * 60 * 60 * 1000;
+        if (new Date().getTime() - settings.timestamp > sevenDaysMs) {
+            localStorage.removeItem('odooPermManager_uiSettings');
+            return false;
+        }
+        
+        // Restaurar configuraciones
+        if (settings.showOnlySystemUsers !== undefined) {
+            document.getElementById('showOnlySystemUsers').checked = settings.showOnlySystemUsers;
+        }
+        
+        if (settings.lastActiveTab) {
+            document.getElementById(settings.lastActiveTab)?.click();
+        }
+        
+        if (settings.filterText) {
+            document.getElementById('searchInput').value = settings.filterText;
+            filterUserAndGroupLists(); // Aplicar el filtro
+        }
+        
+        return true;
+    } catch (e) {
+        console.error('Error al restaurar configuraciones:', e);
+        localStorage.removeItem('odooPermManager_uiSettings');
+    }
+    
+    return false;
+}
+
+// Configurar eventos para guardar selecciones y configuraciones
+document.addEventListener('DOMContentLoaded', function() {
+    // Configurar la persistencia
+    const existingDOMContentLoaded = document.readyState === 'complete';
+    
+    // Si la función ya se ejecutó anteriormente (por el DOMContentLoaded original)
+    if (existingDOMContentLoaded) {
+        setupLocalStoragePersistence();
     } else {
-        panel.style.display = 'none';
+        // Añadir al final de la cola de eventos
+        setTimeout(setupLocalStoragePersistence, 0);
     }
-}
+});
 
-// Poblar los selectores de usuarios para la comparación
-function populateUserSelects() {
-    const user1Select = document.getElementById('user1Select');
-    const user2Select = document.getElementById('user2Select');
-    
-    // Limpiar opciones existentes excepto la primera
-    while (user1Select.options.length > 1) user1Select.remove(1);
-    while (user2Select.options.length > 1) user2Select.remove(1);
-    
-    // Ordenar usuarios por nombre
-    const sortedUsers = [...allUsers].sort((a, b) => a.name.localeCompare(b.name));
-    
-    // Añadir opciones para cada usuario
-    sortedUsers.forEach(user => {
-        // Solo incluir usuarios del sistema para evitar confusiones
-        if (isSystemUser(user)) {
-            const option1 = document.createElement('option');
-            option1.value = user.id;
-            option1.textContent = user.name;
-            
-            const option2 = document.createElement('option');
-            option2.value = user.id;
-            option2.textContent = user.name;
-            
-            user1Select.appendChild(option1);
-            user2Select.appendChild(option2);
-        }
+// Configura los eventos para la persistencia de datos
+function setupLocalStoragePersistence() {
+    // Guardar selección cuando se hace clic en un usuario o grupo
+    document.querySelectorAll('#usersList, #groupsList').forEach(list => {
+        list.addEventListener('click', function(e) {
+            if (e.target.closest('a')) {
+                // Esperar a que se complete la actualización de la UI
+                setTimeout(saveUserSelection, 100);
+            }
+        });
     });
     
-    // Si hay un usuario seleccionado previamente, pre-seleccionarlo en el primer dropdown
-    if (selectedUserId) {
-        user1Select.value = selectedUserId;
-    }
+    // Guardar configuraciones cuando cambian
+    document.getElementById('showOnlySystemUsers').addEventListener('change', saveUISettings);
+    document.getElementById('searchInput').addEventListener('input', saveUISettings);
+    
+    // Guardar la pestaña activa cuando cambia
+    document.querySelectorAll('#userTypeTabs .nav-link, #comparisonTabs .nav-link').forEach(tab => {
+        tab.addEventListener('shown.bs.tab', saveUISettings);
+    });
+    
+    // Restaurar configuraciones al cargar
+    document.getElementById('refreshBtn').addEventListener('click', function() {
+        // Guardar configuraciones actuales antes de recargar
+        saveUISettings();
+        saveUserSelection();
+    });
+    
+    // Modificar la función loadInitialData para restaurar después de cargar
+    const originalLoadInitialData = loadInitialData;
+    loadInitialData = function() {
+        originalLoadInitialData.call(this);
+        
+        // Después de cargar los datos, restaurar configuraciones y selección
+        setTimeout(() => {
+            restoreUISettings();
+            restoreUserSelection();
+        }, 500);
+    };
 }
 
-// Ejecutar la comparación entre los dos usuarios seleccionados
-function runUsersComparison() {
-    const user1Id = parseInt(document.getElementById('user1Select').value);
-    const user2Id = parseInt(document.getElementById('user2Select').value);
+/**
+ * Optimizaciones de carga y rendimiento
+ */
+
+// Función para cargar datos de forma optimizada
+function loadOptimizedData() {
+    showLoading('Cargando datos...');
     
-    // Validar que ambos usuarios estén seleccionados
-    if (!user1Id || !user2Id) {
-        showError('Por favor, seleccione ambos usuarios para comparar.');
-        return;
+    // Flag para controlar la carga asíncrona
+    let loadedUsers = false;
+    let loadedGroups = false;
+    
+    // Variable para almacenar módulos
+    let modulesData = null;
+    
+    // Función para finalizar cuando todo está cargado
+    function finishLoading() {
+        if (loadedUsers && loadedGroups && modulesData) {
+            // Mostrar los datos iniciales
+            populateUsersList();
+            populateGroupsList();
+            populateUserSelects();
+            
+            // Mostrar el árbol de permisos sólo si hay módulos
+            if (modulesData.modules && modulesData.modules.length > 0) {
+                displayPermissionsTree(modulesData.modules, null);
+                
+                // Poblar selector de filtro de módulos
+                populateModuleFilter(modulesData.modules);
+            }
+            
+            // Restaurar UI
+            setTimeout(() => {
+                restoreUISettings();
+                restoreUserSelection();
+            }, 300);
+            
+            hideLoading();
+        }
     }
     
-    // Validar que no sean el mismo usuario
-    if (user1Id === user2Id) {
-        showError('Por favor, seleccione dos usuarios diferentes para comparar.');
-        return;
-    }
+    // Cargar usuarios
+    google.script.run
+        .withSuccessHandler(userResult => {
+            if (userResult.success) {
+                allUsers = userResult.users;
+                console.log(`Cargados ${allUsers.length} usuarios`);
+                loadedUsers = true;
+                finishLoading();
+            } else {
+                hideLoading();
+                showError('Error al cargar usuarios: ' + (userResult.error || 'Desconocido'));
+            }
+        })
+        .withFailureHandler(error => {
+            hideLoading();
+            showError('Error al cargar usuarios: ' + error);
+        })
+        .getUsers(odooSessionId);
     
-    showLoading('Comparando permisos...');
+    // Cargar grupos (en paralelo)
+    google.script.run
+        .withSuccessHandler(groupResult => {
+            if (groupResult.success) {
+                allGroups = groupResult.groups;
+                console.log(`Cargados ${allGroups.length} grupos`);
+                loadedGroups = true;
+                finishLoading();
+            } else {
+                hideLoading();
+                showError('Error al cargar grupos: ' + (groupResult.error || 'Desconocido'));
+            }
+        })
+        .withFailureHandler(error => {
+            hideLoading();
+            showError('Error al cargar grupos: ' + error);
+        })
+        .getGroups(odooSessionId);
     
-    // Obtener usuarios localmente solo para mostrar los nombres en los encabezados
-    const user1 = allUsers.find(u => u.id === user1Id);
-    const user2 = allUsers.find(u => u.id === user2Id);
-    
-    // Mostrar nombres en los encabezados
-    document.getElementById('user1Header').textContent = user1.name;
-    document.getElementById('user2Header').textContent = user2.name;
-    document.getElementById('allUser1Header').textContent = user1.name;
-    document.getElementById('allUser2Header').textContent = user2.name;
-    
-    // Llamar al backend para comparar los permisos
+    // Cargar módulos (en paralelo)
     google.script.run
         .withSuccessHandler(result => {
             if (result.success) {
-                // Mostrar resultados
-                showComparisonResults(result.comparison, user1, user2);
-                
-                // Mostrar el contenedor de resultados
-                document.getElementById('comparisonResultsContainer').style.display = 'block';
+                modulesData = result;
+                console.log(`Cargados ${result.modules.length} módulos`);
+                finishLoading();
             } else {
-                showError('Error al comparar permisos: ' + result.error);
+                hideLoading();
+                showError('Error al cargar módulos: ' + (result.error || 'Desconocido'));
+            }
+        })
+        .withFailureHandler(error => {
+            hideLoading();
+            showError('Error al cargar módulos: ' + error);
+        })
+        .getModules(odooSessionId);
+}
+
+// Poblar el selector de filtro de módulos
+function populateModuleFilter(modules) {
+    const moduleFilter = document.getElementById('moduleFilter');
+    moduleFilter.innerHTML = '<option value="">Todos los módulos</option>';
+    
+    // Ordenar módulos alfabéticamente
+    const sortedModules = [...modules]
+        .filter(module => module.models && module.models.length > 0)
+        .sort((a, b) => a.shortdesc.localeCompare(b.shortdesc));
+    
+    // Añadir opciones para cada módulo
+    sortedModules.forEach(module => {
+        const option = document.createElement('option');
+        option.value = module.id;
+        option.textContent = `${module.shortdesc} (${module.models.length})`;
+        moduleFilter.appendChild(option);
+    });
+    
+    // Configurar evento para filtrar
+    moduleFilter.addEventListener('change', filterPermissionsTree);
+}
+
+// Filtrar el árbol de permisos según el módulo seleccionado
+function filterPermissionsTree() {
+    const moduleId = document.getElementById('moduleFilter').value;
+    const searchText = document.getElementById('permissionSearchInput').value.toLowerCase();
+    
+    // Filtrar módulos
+    document.querySelectorAll('.module-item').forEach(moduleItem => {
+        const moduleIdAttr = moduleItem.getAttribute('data-module-id');
+        const moduleName = moduleItem.querySelector('.module-name').textContent.toLowerCase();
+        
+        const matchesModule = !moduleId || moduleIdAttr === moduleId;
+        const matchesSearch = !searchText || moduleName.includes(searchText);
+        
+        if (matchesModule && matchesSearch) {
+            moduleItem.style.display = '';
+        } else if (!matchesModule) {
+            moduleItem.style.display = 'none';
+        } else {
+            // Si el módulo no coincide con la búsqueda, pero podría tener modelos que sí
+            moduleItem.style.display = '';
+            
+            // Buscar en modelos dentro del módulo
+            let hasVisibleModels = false;
+            moduleItem.querySelectorAll('.model-item').forEach(modelItem => {
+                const modelName = modelItem.querySelector('.model-name').textContent.toLowerCase();
+                const modelTech = modelItem.getAttribute('data-model-name').toLowerCase();
+                
+                if (modelName.includes(searchText) || modelTech.includes(searchText)) {
+                    modelItem.style.display = '';
+                    hasVisibleModels = true;
+                } else {
+                    modelItem.style.display = 'none';
+                }
+            });
+            
+            // Si ningún modelo coincide, ocultar el módulo
+            if (!hasVisibleModels) {
+                moduleItem.style.display = 'none';
+            } else {
+                // Expandir el módulo para mostrar los resultados
+                const modelList = moduleItem.querySelector('.model-list');
+                if (!modelList.classList.contains('show')) {
+                    new bootstrap.Collapse(modelList).show();
+                    const chevron = moduleItem.querySelector('.fa-chevron-down');
+                    if (chevron) {
+                        chevron.classList.replace('fa-chevron-down', 'fa-chevron-up');
+                    }
+                }
+            }
+        }
+    });
+    
+    // Actualizar información sobre filtros activos
+    updateFilterInfo();
+}
+
+// Actualizar la información sobre filtros activos
+function updateFilterInfo() {
+    const infoText = document.getElementById('filterInfoText');
+    const moduleFilter = document.getElementById('moduleFilter');
+    const searchText = document.getElementById('permissionSearchInput').value;
+    
+    let info = 'Seleccione un usuario o grupo para gestionar sus permisos.';
+    
+    if (moduleFilter.value || searchText) {
+        info = 'Filtros activos: ';
+        
+        if (moduleFilter.value) {
+            const selectedOption = moduleFilter.options[moduleFilter.selectedIndex];
+            info += `Módulo: "${selectedOption.textContent}"`;
+        }
+        
+        if (searchText) {
+            if (moduleFilter.value) info += ' | ';
+            info += `Búsqueda: "${searchText}"`;
+        }
+    }
+    
+    infoText.textContent = info;
+}
+
+// Configurar filtros adicionales y eventos de búsqueda
+function setupAdvancedFilters() {
+    // Filtro de búsqueda de permisos
+    const permSearchInput = document.getElementById('permissionSearchInput');
+    permSearchInput.addEventListener('input', function() {
+        filterPermissionsTree();
+    });
+    
+    // Filtros de usuarios y grupos
+    const userSearchInput = document.getElementById('userSearchInput');
+    userSearchInput.addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        
+        // Filtrar según la pestaña activa
+        if (document.getElementById('users-tab').classList.contains('active')) {
+            document.querySelectorAll('#usersList a').forEach(item => {
+                const userName = item.querySelector('.fw-medium').textContent.toLowerCase();
+                const userDetails = item.querySelector('.text-muted').textContent.toLowerCase();
+                
+                if (userName.includes(searchTerm) || userDetails.includes(searchTerm)) {
+                    item.style.display = '';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        } else {
+            document.querySelectorAll('#groupsList a').forEach(item => {
+                const groupName = item.textContent.toLowerCase();
+                
+                if (groupName.includes(searchTerm)) {
+                    item.style.display = '';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+    });
+    
+    // Limpiar búsqueda de usuarios/grupos
+    document.getElementById('userSearchClear').addEventListener('click', function() {
+        userSearchInput.value = '';
+        userSearchInput.dispatchEvent(new Event('input'));
+    });
+    
+    // Mostrar solo usuarios del sistema
+    document.getElementById('showOnlySystemUsers').addEventListener('change', function() {
+        populateUsersList(); // Repoblar la lista con el nuevo filtro
+    });
+}
+
+/**
+ * Mejoras de accesibilidad
+ */
+function setupAccessibilityEnhancements() {
+    // Añadir atributos ARIA a elementos interactivos
+    document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
+        tab.setAttribute('aria-role', 'tab');
+    });
+    
+    // Añadir etiquetas a campos de búsqueda
+    document.getElementById('searchInput').setAttribute('aria-label', 'Buscar usuario o grupo');
+    document.getElementById('userSearchInput').setAttribute('aria-label', 'Filtrar usuarios o grupos');
+    document.getElementById('permissionSearchInput').setAttribute('aria-label', 'Filtrar permisos');
+    
+    // Mejorar interactividad con el teclado
+    document.querySelectorAll('.model-item, .module-item, #usersList a, #groupsList a').forEach(item => {
+        item.setAttribute('tabindex', '0');
+        
+        // Permitir activación con teclado
+        item.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                this.click();
+            }
+        });
+    });
+    
+    // Añadir tooltips a elementos con iconos
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+        new bootstrap.Tooltip(el);
+    });
+    
+    // Añadir tooltips a elementos que solo tienen iconos
+    document.querySelectorAll('button, .btn').forEach(btn => {
+        const hasText = Array.from(btn.childNodes).some(node => 
+            node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0
+        );
+        
+        const hasTitle = btn.hasAttribute('title');
+        
+        if (!hasText && !hasTitle && btn.querySelector('i.fas, i.far, i.fab')) {
+            // Intentar generar título a partir del aria-label o texto de elementos hijos
+            let title = btn.getAttribute('aria-label');
+            
+            if (!title) {
+                const span = btn.querySelector('span');
+                if (span) {
+                    title = span.textContent.trim();
+                }
+            }
+            
+            if (title) {
+                btn.setAttribute('title', title);
+                new bootstrap.Tooltip(btn);
+            }
+        }
+    });
+    
+    // Añadir feedback auditivo para operaciones importantes
+    document.getElementById('savePermissionsBtn').addEventListener('click', function() {
+        // Se anunciará para lectores de pantalla
+        const announcement = document.createElement('div');
+        announcement.setAttribute('role', 'status');
+        announcement.setAttribute('aria-live', 'polite');
+        announcement.className = 'sr-only';
+        announcement.textContent = 'Guardando permisos...';
+        document.body.appendChild(announcement);
+        
+        // Eliminar después de 3 segundos
+        setTimeout(() => {
+            if (document.body.contains(announcement)) {
+                document.body.removeChild(announcement);
+            }
+        }, 3000);
+    });
+    
+    // Añadir enfoque mejorado para elementos navegables
+    const style = document.createElement('style');
+    style.textContent = `
+        :focus-visible {
+            outline: 3px solid #1a73e8;
+            outline-offset: 2px;
+        }
+        
+        /* Mejoras visuales para modo de alto contraste */
+        @media (forced-colors: active) {
+            .permission-card {
+                border: 1px solid CanvasText;
+            }
+            .badge {
+                border: 1px solid CanvasText;
+            }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // Configurar manejo de errores accesible
+    window.addEventListener('error', function(e) {
+        // Anunciar errores para lectores de pantalla
+        const announcement = document.createElement('div');
+        announcement.setAttribute('role', 'alert');
+        announcement.setAttribute('aria-live', 'assertive');
+        announcement.className = 'sr-only';
+        announcement.textContent = 'Error en la aplicación: ' + e.message;
+        document.body.appendChild(announcement);
+        
+        // Eliminar después de 5 segundos
+        setTimeout(() => {
+            if (document.body.contains(announcement)) {
+                document.body.removeChild(announcement);
+            }
+        }, 5000);
+        
+        // No detener la propagación del error
+        return false;
+    });
+    
+    console.log('Mejoras de accesibilidad configuradas');
+}
+
+// Sobrescribir loadInitialData para usar la versión optimizada
+document.addEventListener('DOMContentLoaded', function() {
+    // Preservar referencia original
+    const originalLoadInitialData = loadInitialData;
+    
+    // Sobrescribir con versión optimizada
+    loadInitialData = loadOptimizedData;
+    
+    // Configurar filtros avanzados
+    setupAdvancedFilters();
+    
+    // Eventos adicionales para mejorar la accesibilidad
+    setupAccessibilityEnhancements();
+});
+
+
+/**
+ * Actualiza los badges de permisos en el árbol de modelos
+ * @param {string} modelName - Nombre técnico del modelo
+ * @param {Object} permissions - Objeto con permisos del modelo
+ */
+function updatePermissionBadgesInTree(modelName, permissions) {
+    // Buscar el elemento del modelo en el árbol
+    const modelItem = document.querySelector(`.model-item[data-model-name="${modelName}"]`);
+    if (!modelItem) return;
+    
+    // Contenedor de badges
+    const badgesContainer = modelItem.querySelector('.permission-badges');
+    if (!badgesContainer) return;
+    
+    // Limpiar badges existentes
+    badgesContainer.innerHTML = '';
+    
+    // Tipos de permisos y sus colores
+    const permTypes = [
+        { type: 'read', label: 'R', color: 'bg-info' },
+        { type: 'write', label: 'W', color: 'bg-primary' },
+        { type: 'create', label: 'C', color: 'bg-warning text-dark' },
+        { type: 'unlink', label: 'D', color: 'bg-danger' }
+    ];
+    
+    // Crear badges para cada tipo de permiso
+    permTypes.forEach(perm => {
+        if (permissions[perm.type]) {
+            const badge = document.createElement('span');
+            badge.className = `badge ${perm.color} permission-badge`;
+            badge.textContent = perm.label;
+            
+            // Añadir clase si es un permiso heredado
+            if (permissions[`${perm.type}_inherited`]) {
+                badge.classList.add('opacity-75');
+                badge.title = 'Heredado de otro grupo';
+            }
+            
+            badgesContainer.appendChild(badge);
+        }
+    });
+}
+
+/**
+ * Obtiene y muestra los permisos para un modelo específico
+ * @param {string} modelName - Nombre técnico del modelo (ej: "res.users")
+ * @param {number} userId - ID del usuario o grupo
+ * @param {boolean} isGroup - Indica si el ID es de un grupo
+ */
+function getModelPermissions(modelName, userId, isGroup = false) {
+    showLoading('Obteniendo permisos...');
+    
+    google.script.run
+        .withSuccessHandler(result => {
+            if (result.success) {
+                const permissions = result.permissions;
+                
+                // Actualizar la visualización de permisos en el panel de detalles
+                updatePermissionChecklist(modelName, permissions, userId, isGroup);
+                
+                // Actualizar los badges de permisos en el árbol
+                updatePermissionBadgesInTree(modelName, permissions);
+            } else {
+                showError('Error al obtener permisos: ' + (result.error || 'Error desconocido'));
             }
             hideLoading();
         })
         .withFailureHandler(error => {
-            showError('Error al comunicarse con el servidor: ' + error);
+            showError('Error: ' + error);
             hideLoading();
         })
-        .compareUserPermissions(odooSessionId, user1Id, user2Id);
+        .getModelPermissions(odooSessionId, modelName, userId, isGroup);
 }
 
-/*
-// Estas funciones ahora se ejecutan en el backend (codigo.gs)
-// Obtener permisos efectivos para un usuario
-function getUserEffectivePermissions(user) {
-    // Recopilar todos los grupos del usuario, incluidos los heredados
-    const effectiveGroupIds = new Set(user.groups_id);
-    user.groups_id.forEach(gId => {
-        collectInheritedGroups(gId, effectiveGroupIds);
+/**
+ * Genera un gráfico visual de relaciones entre grupos y permisos
+ * @param {Array} userGroups - Lista de grupos del usuario
+ */
+function generatePermissionVisualizations(userGroups) {
+    // Crear contenedor para el resumen visual si no existe
+    let summaryContainer = document.getElementById('permissionSummaryChart');
+    if (!summaryContainer) {
+        summaryContainer = document.createElement('div');
+        summaryContainer.id = 'permissionSummaryChart';
+        summaryContainer.className = 'permission-summary-chart mt-3 mb-3 p-3 border rounded bg-light';
+        
+        // Insertar después del contenedor de badges
+        const userBadgesContainer = document.getElementById('userBadges');
+        userBadgesContainer.parentNode.insertBefore(summaryContainer, userBadgesContainer.nextSibling);
+    }
+    
+    // Limpiar contenido existente
+    summaryContainer.innerHTML = '<h6 class="mb-3"><i class="fas fa-chart-pie me-2"></i>Resumen de permisos</h6>';
+    
+    // Crear gráfico visual básico de distribución de permisos
+    const chartContainer = document.createElement('div');
+    chartContainer.className = 'd-flex flex-wrap justify-content-center gap-2 mb-3';
+    
+    // Categorías comunes de permisos
+    const permissionCategories = [
+        { name: 'Gestión de usuarios', color: '#4285F4', icon: 'fa-users' },
+        { name: 'Contabilidad', color: '#34A853', icon: 'fa-file-invoice-dollar' },
+        { name: 'Ventas', color: '#FBBC05', icon: 'fa-shopping-cart' },
+        { name: 'Inventario', color: '#EA4335', icon: 'fa-boxes' },
+        { name: 'Configuración', color: '#673AB7', icon: 'fa-cogs' },
+        { name: 'Informes', color: '#FF9800', icon: 'fa-chart-bar' },
+        { name: 'Otros', color: '#9E9E9E', icon: 'fa-ellipsis-h' }
+    ];
+    
+    // Calcular tamaño relativo basado en los grupos
+    permissionCategories.forEach(category => {
+        // Filtrar grupos por categoría (simulado - en producción se haría según nombres/categorías reales)
+        const relatedGroups = userGroups.filter(group => 
+            group.name.toLowerCase().includes(category.name.toLowerCase()) ||
+            (group.category_id && group.category_id[1].toLowerCase().includes(category.name.toLowerCase()))
+        );
+        
+        // Calcular tamaño (mínimo 1, máximo 5)
+        const size = Math.min(5, Math.max(1, Math.ceil(relatedGroups.length / 2)));
+        
+        // Crear elemento visual
+        const categoryBox = document.createElement('div');
+        categoryBox.className = 'd-flex flex-column align-items-center text-center p-2';
+        categoryBox.style.width = '100px';
+        
+        // Círculo con tamaño relativo
+        const circle = document.createElement('div');
+        circle.className = 'rounded-circle d-flex align-items-center justify-content-center mb-2';
+        circle.style.width = `${30 + (size * 10)}px`;
+        circle.style.height = `${30 + (size * 10)}px`;
+        circle.style.backgroundColor = category.color;
+        circle.style.color = 'white';
+        
+        // Icono
+        const icon = document.createElement('i');
+        icon.className = `fas ${category.icon} fa-${Math.min(2, size)}x`;
+        circle.appendChild(icon);
+        
+        // Texto
+        const text = document.createElement('div');
+        text.className = 'small';
+        text.textContent = category.name;
+        
+        // Count
+        const count = document.createElement('div');
+        count.className = 'badge bg-secondary';
+        count.textContent = relatedGroups.length;
+        
+        categoryBox.appendChild(circle);
+        categoryBox.appendChild(text);
+        categoryBox.appendChild(count);
+        
+        // Añadir evento para mostrar detalles
+        categoryBox.style.cursor = 'pointer';
+        categoryBox.title = `Ver grupos relacionados con ${category.name}`;
+        categoryBox.addEventListener('click', () => {
+            showCategoryGroupsModal(category.name, relatedGroups);
+        });
+        
+        chartContainer.appendChild(categoryBox);
     });
     
-    // Filtrar permisos relevantes para el usuario
-    const userPermissions = {};
+    summaryContainer.appendChild(chartContainer);
     
-    allModelAccess.forEach(access => {
-        if (!access.group_id || !effectiveGroupIds.has(access.group_id[0])) return;
+    // Añadir botón para ver análisis detallado
+    const detailsButton = document.createElement('button');
+    detailsButton.className = 'btn btn-sm btn-outline-primary d-block mx-auto mt-2';
+    detailsButton.innerHTML = '<i class="fas fa-eye me-1"></i> Ver análisis detallado';
+    detailsButton.addEventListener('click', () => {
+        showDetailedPermissionAnalysis(userGroups);
+    });
+    
+    summaryContainer.appendChild(detailsButton);
+}
+
+/**
+ * Muestra un modal con los grupos de una categoría específica
+ * @param {string} categoryName - Nombre de la categoría
+ * @param {Array} relatedGroups - Grupos relacionados con la categoría
+ */
+function showCategoryGroupsModal(categoryName, relatedGroups) {
+    // Crear modal dinámicamente
+    const modalId = 'categoryGroupsModal';
+    let modal = document.getElementById(modalId);
+    
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.id = modalId;
+        modal.tabIndex = '-1';
+        modal.innerHTML = `
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Grupos de <span id="categoryNameTitle"></span></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <ul id="categoryGroupsList" class="list-group"></ul>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    // Actualizar contenido
+    document.getElementById('categoryNameTitle').textContent = categoryName;
+    
+    const groupsList = document.getElementById('categoryGroupsList');
+    groupsList.innerHTML = '';
+    
+    if (relatedGroups.length === 0) {
+        groupsList.innerHTML = '<li class="list-group-item text-muted">No hay grupos relacionados con esta categoría</li>';
+    } else {
+        relatedGroups.forEach(group => {
+            const item = document.createElement('li');
+            item.className = 'list-group-item d-flex justify-content-between align-items-center';
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = group.full_name || group.name;
+            
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-primary rounded-pill';
+            badge.textContent = group.users ? group.users.length : '0';
+            badge.title = 'Número de usuarios';
+            
+            item.appendChild(nameSpan);
+            item.appendChild(badge);
+            groupsList.appendChild(item);
+        });
+    }
+    
+    // Mostrar modal
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+}
+
+/**
+ * Muestra un análisis detallado de permisos del usuario
+ * @param {Array} userGroups - Grupos del usuario
+ */
+function showDetailedPermissionAnalysis(userGroups) {
+    // Implementar en versión futura
+    alert('Esta funcionalidad estará disponible en la próxima versión');
+}
+
+// Función para mostrar información detallada del usuario
+function displayUserDetails(user) {
+    // Actualizar el título con el nombre del usuario
+    document.getElementById('selectedUserName').textContent = user.name;
+    
+    // Mostrar información detallada del usuario
+    const userInfoContainer = document.getElementById('userInfo');
+    if (userInfoContainer) {
+        userInfoContainer.innerHTML = `
+            <div class="mb-2 text-muted small">
+                <strong>Login:</strong> ${user.login}
+                ${user.email ? `<br><strong>Email:</strong> ${user.email}` : ''}
+                ${user.company_id ? `<br><strong>Empresa:</strong> ${user.company_id[1]}` : ''}
+                <br><strong>Grupos:</strong> ${user.groups_id.length}
+            </div>
+        `;
+    }
+    
+    // Mostrar badges de los grupos asignados
+    const userBadgesContainer = document.getElementById('userBadges');
+    userBadgesContainer.innerHTML = '';
+    
+    // Construir un conjunto de todos los grupos, incluyendo heredados
+    const directGroupIds = new Set(user.groups_id);
+    let allUserGroupIds = new Set(directGroupIds);
+    
+    // Añadir grupos heredados
+    directGroupIds.forEach(groupId => {
+        collectInheritedGroups(groupId, allUserGroupIds);
+    });
+    
+    // Convertir a array y ordenar por nombre
+    const userGroups = Array.from(allUserGroupIds)
+        .map(groupId => allGroups.find(g => g.id === groupId))
+        .filter(group => group) // Eliminar nulos
+        .sort((a, b) => a.name.localeCompare(b.name));
+    
+    // Crear badges para cada grupo
+    userGroups.forEach(group => {
+        const isDirectGroup = directGroupIds.has(group.id);
+        const badge = document.createElement('span');
         
-        const modelName = access.model_id ? access.model_id[1] : null;
-        if (!modelName) return;
+        // Estilo diferente para grupos directos vs heredados
+        if (isDirectGroup) {
+            badge.className = 'badge bg-primary me-1 mb-1';
+        } else {
+            badge.className = 'badge bg-info me-1 mb-1';
+            badge.title = 'Heredado';
+        }
         
-        // Determinar el módulo
-        const moduleName = getModuleFromModel(modelName);
+        // Mostrar el nombre completo en el tooltip si existe
+        if (group.full_name) {
+            badge.title = group.full_name;
+        }
         
-        if (!userPermissions[modelName]) {
-            userPermissions[modelName] = {
-                module: moduleName,
-                read: false,
-                write: false,
-                create: false,
-                unlink: false
+        badge.textContent = group.name;
+        badge.style.cursor = 'pointer';
+        
+        // Evento para mostrar detalles del grupo
+        badge.addEventListener('click', () => {
+            displayGroupDetails(group);
+        });
+        
+        userBadgesContainer.appendChild(badge);
+    });
+    
+    // Generar visualización de permisos
+    generatePermissionVisualizations(userGroups);
+}
+/**
+ * Odoo Permissions Manager - Core Functions
+ * This file contains the main functionality for the Odoo Permissions Manager application
+ * @author: Desarrollado con GitHub Copilot
+ * @date: Mayo 2024
+ */
+
+// Cache de datos para optimizar rendimiento
+const dataCache = {
+    users: null,
+    groups: null,
+    modules: null,
+    permissions: {},
+    userGroups: {}
+};
+
+/**
+ * Función para mostrar el indicador de carga
+ * @param {string} message - Mensaje a mostrar durante la carga
+ */
+function showLoading(message = 'Cargando...') {
+    const loadingElement = document.getElementById('loadingIndicator');
+    
+    if (!loadingElement) {
+        // Crear el indicador de carga si no existe
+        const loadingDiv = document.createElement('div');
+        loadingDiv.id = 'loadingIndicator';
+        loadingDiv.className = 'position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center bg-dark bg-opacity-25';
+        loadingDiv.style.zIndex = '1050';
+        
+        loadingDiv.innerHTML = `
+            <div class="card shadow-sm p-3">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border text-primary me-3" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                    <div id="loadingMessage" class="fw-medium"></div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(loadingDiv);
+    }
+    
+    // Actualizar el mensaje
+    document.getElementById('loadingMessage').textContent = message;
+    document.getElementById('loadingIndicator').style.display = 'flex';
+    
+    console.log('Cargando: ' + message);
+}
+
+/**
+ * Función para ocultar el indicador de carga
+ */
+function hideLoading() {
+    const loadingElement = document.getElementById('loadingIndicator');
+    if (loadingElement) {
+        loadingElement.style.display = 'none';
+    }
+    
+    console.log('Carga completada');
+}
+
+/**
+ * Función para mostrar mensajes de error
+ * @param {string} message - Mensaje de error a mostrar
+ */
+function showError(message) {
+    // Crear un toast para el mensaje de error
+    const toastId = 'errorToast' + Date.now();
+    
+    const toastElement = document.createElement('div');
+    toastElement.className = 'toast position-fixed top-0 end-0 m-3';
+    toastElement.id = toastId;
+    toastElement.setAttribute('role', 'alert');
+    toastElement.setAttribute('aria-live', 'assertive');
+    toastElement.setAttribute('aria-atomic', 'true');
+    toastElement.setAttribute('data-bs-delay', '5000');
+    
+    toastElement.innerHTML = `
+        <div class="toast-header bg-danger text-white">
+            <i class="fas fa-exclamation-circle me-2"></i>
+            <strong class="me-auto">Error</strong>
+            <small>Ahora</small>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Cerrar"></button>
+        </div>
+        <div class="toast-body">
+            ${message}
+        </div>
+    `;
+    
+    // Añadir el toast al contenedor
+    let toastContainer = document.getElementById('toastContainer');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'toastContainer';
+        toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+        document.body.appendChild(toastContainer);
+    }
+    
+    toastContainer.appendChild(toastElement);
+    
+    // Mostrar el toast
+    const toast = new bootstrap.Toast(toastElement);
+    toast.show();
+    
+    // También registrar en la consola
+    console.error(message);
+    
+    // Anunciar para lectores de pantalla
+    const announcement = document.createElement('div');
+    announcement.setAttribute('role', 'alert');
+    announcement.setAttribute('aria-live', 'assertive');
+    announcement.className = 'visually-hidden';
+    announcement.textContent = 'Error: ' + message;
+    document.body.appendChild(announcement);
+    
+    // Eliminar después de 5 segundos
+    setTimeout(() => {
+        if (document.body.contains(announcement)) {
+            document.body.removeChild(announcement);
+        }
+    }, 5000);
+}
+
+/**
+ * Función para mostrar mensajes informativos
+ * @param {string} message - Mensaje informativo a mostrar
+ * @param {string} title - Título opcional del mensaje
+ */
+function showInfo(message, title = 'Información') {
+    const toastId = 'infoToast' + Date.now();
+    
+    const toastElement = document.createElement('div');
+    toastElement.className = 'toast position-fixed top-0 end-0 m-3';
+    toastElement.id = toastId;
+    toastElement.setAttribute('role', 'alert');
+    toastElement.setAttribute('aria-live', 'polite');
+    toastElement.setAttribute('aria-atomic', 'true');
+    toastElement.setAttribute('data-bs-delay', '4000');
+    
+    toastElement.innerHTML = `
+        <div class="toast-header bg-info text-white">
+            <i class="fas fa-info-circle me-2"></i>
+            <strong class="me-auto">${title}</strong>
+            <small>Ahora</small>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Cerrar"></button>
+        </div>
+        <div class="toast-body">
+            ${message}
+        </div>
+    `;
+    
+    // Añadir el toast al contenedor
+    let toastContainer = document.getElementById('toastContainer');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'toastContainer';
+        toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+        document.body.appendChild(toastContainer);
+    }
+    
+    toastContainer.appendChild(toastElement);
+    
+    // Mostrar el toast
+    const toast = new bootstrap.Toast(toastElement);
+    toast.show();
+    
+    // Registrar en la consola
+    console.info(message);
+}
+
+/**
+ * Función para guardar la selección del usuario en localStorage
+ * @param {number} id - ID del usuario o grupo seleccionado
+ * @param {boolean} isGroup - Indica si es un grupo
+ */
+function saveUserSelection(id, isGroup) {
+    try {
+        localStorage.setItem('lastSelectedId', id);
+        localStorage.setItem('lastSelectionIsGroup', isGroup);
+        localStorage.setItem('lastSelectionTime', new Date().toISOString());
+    } catch (error) {
+        console.warn('No se pudo guardar la selección en localStorage:', error);
+    }
+}
+
+/**
+ * Función para restaurar la selección del usuario desde localStorage
+ * @returns {Object|null} Datos de la última selección o null si no hay datos guardados
+ */
+function restoreUserSelection() {
+    try {
+        const id = localStorage.getItem('lastSelectedId');
+        const isGroup = localStorage.getItem('lastSelectionIsGroup') === 'true';
+        const time = localStorage.getItem('lastSelectionTime');
+        
+        if (id && time) {
+            // Comprobar si ha pasado mucho tiempo desde la última selección (48 horas)
+            const lastTime = new Date(time);
+            const now = new Date();
+            const diff = now.getTime() - lastTime.getTime();
+            const hours = diff / (1000 * 60 * 60);
+            
+            if (hours < 48) {
+                return { id: parseInt(id), isGroup };
+            }
+        }
+    } catch (error) {
+        console.warn('No se pudo restaurar la selección desde localStorage:', error);
+    }
+    
+    return null;
+}
+
+/**
+ * Función para guardar configuración de UI en localStorage
+ * @param {Object} settings - Objeto con configuraciones a guardar
+ */
+function saveUISettings(settings) {
+    try {
+        const currentSettings = getUISettings();
+        const updatedSettings = { ...currentSettings, ...settings };
+        localStorage.setItem('uiSettings', JSON.stringify(updatedSettings));
+    } catch (error) {
+        console.warn('No se pudo guardar la configuración en localStorage:', error);
+    }
+}
+
+/**
+ * Función para obtener configuración de UI desde localStorage
+ * @returns {Object} Configuración guardada o valores por defecto
+ */
+function getUISettings() {
+    try {
+        const settings = localStorage.getItem('uiSettings');
+        return settings ? JSON.parse(settings) : {};
+    } catch (error) {
+        console.warn('No se pudo obtener la configuración desde localStorage:', error);
+        return {};
+    }
+}
+
+/**
+ * Función optimizada para cargar datos iniciales en paralelo
+ * @param {string} sessionId - ID de sesión de Odoo
+ */
+function loadOptimizedData(sessionId) {
+    showLoading('Cargando datos...');
+    
+    // Almacenar el ID de sesión para su uso posterior
+    window.odooSessionId = sessionId;
+    
+    // Definir promesas para las llamadas paralelas
+    const promises = [];
+    
+    // Promesa para cargar usuarios
+    const loadUsersPromise = new Promise((resolve, reject) => {
+        google.script.run
+            .withSuccessHandler(result => {
+                if (result.success) {
+                    window.allUsers = result.users;
+                    resolve(result.users);
+                } else {
+                    reject(new Error('Error al cargar usuarios: ' + (result.error || 'Error desconocido')));
+                }
+            })
+            .withFailureHandler(error => {
+                reject(new Error('Error al cargar usuarios: ' + error));
+            })
+            .getUsers(sessionId);
+    });
+    promises.push(loadUsersPromise);
+    
+    // Promesa para cargar grupos
+    const loadGroupsPromise = new Promise((resolve, reject) => {
+        google.script.run
+            .withSuccessHandler(result => {
+                if (result.success) {
+                    window.allGroups = result.groups;
+                    resolve(result.groups);
+                } else {
+                    reject(new Error('Error al cargar grupos: ' + (result.error || 'Error desconocido')));
+                }
+            })
+            .withFailureHandler(error => {
+                reject(new Error('Error al cargar grupos: ' + error));
+            })
+            .getGroups(sessionId);
+    });
+    promises.push(loadGroupsPromise);
+    
+    // Promesa para cargar módulos
+    const loadModulesPromise = new Promise((resolve, reject) => {
+        google.script.run
+            .withSuccessHandler(result => {
+                if (result.success) {
+                    window.allModules = result.modules;
+                    resolve(result.modules);
+                } else {
+                    reject(new Error('Error al cargar módulos: ' + (result.error || 'Error desconocido')));
+                }
+            })
+            .withFailureHandler(error => {
+                reject(new Error('Error al cargar módulos: ' + error));
+            })
+            .getModules(sessionId);
+    });
+    promises.push(loadModulesPromise);
+    
+    // Resolver todas las promesas
+    Promise.all(promises)
+        .then(([users, groups, modules]) => {
+            // Actualizar cache
+            dataCache.users = users;
+            dataCache.groups = groups;
+            dataCache.modules = modules;
+            
+            // Poblar listas en la interfaz
+            populateUsersList();
+            populateModulesList();
+            
+            // Actualizar estado
+            updateFilterInfo();
+            
+            // Comprobar si hay una selección guardada
+            const savedSelection = restoreUserSelection();
+            if (savedSelection) {
+                // Intentar seleccionar el último usuario/grupo usado
+                setTimeout(() => {
+                    try {
+                        if (savedSelection.isGroup) {
+                            // Cambiar a la pestaña de grupos
+                            document.getElementById('groups-tab').click();
+                            
+                            // Buscar y seleccionar el grupo
+                            const groupItem = document.querySelector(`#groupsList [data-group-id="${savedSelection.id}"]`);
+                            if (groupItem) {
+                                groupItem.click();
+                            }
+                        } else {
+                            // Buscar y seleccionar el usuario
+                            const userItem = document.querySelector(`#usersList [data-user-id="${savedSelection.id}"]`);
+                            if (userItem) {
+                                userItem.click();
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('No se pudo restaurar la selección anterior:', e);
+                    }
+                }, 500);
+            }
+            
+            hideLoading();
+            showInfo('Datos cargados correctamente', 'Listo');
+        })
+        .catch(error => {
+            hideLoading();
+            showError(error.message);
+        });
+}
+
+/**
+ * Función para exportar permisos a CSV
+ * @param {number} userId - ID del usuario o grupo
+ * @param {boolean} isGroup - Indica si es un grupo o usuario
+ */
+function exportPermissionsToCSV(userId, isGroup) {
+    showLoading('Preparando exportación...');
+    
+    // Obtener nombre del usuario o grupo
+    let entityName = 'exportación';
+    if (isGroup) {
+        const group = dataCache.groups.find(g => g.id === userId);
+        if (group) {
+            entityName = group.name.replace(/[^\w\s-]/g, '_');
+        }
+    } else {
+        const user = dataCache.users.find(u => u.id === userId);
+        if (user) {
+            entityName = user.name.replace(/[^\w\s-]/g, '_');
+        }
+    }
+    
+    // Solicitar permisos detallados al servidor
+    google.script.run
+        .withSuccessHandler(result => {
+            if (result.success) {
+                // Generar CSV
+                let csvContent = "data:text/csv;charset=utf-8,";
+                
+                // Cabecera
+                csvContent += "Módulo,Modelo,Leer,Escribir,Crear,Eliminar,Heredado\n";
+                
+                // Datos
+                const permissions = result.permissions;
+                permissions.forEach(perm => {
+                    const isInherited = perm.read_inherited || perm.write_inherited || 
+                                        perm.create_inherited || perm.unlink_inherited;
+                    
+                    csvContent += `"${perm.module_name}","${perm.model_name}",` +
+                                 `${perm.read},${perm.write},${perm.create},${perm.unlink},` +
+                                 `${isInherited}\n`;
+                });
+                
+                // Crear enlace para descargar
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `permisos_${entityName}_${new Date().toISOString().split('T')[0]}.csv`);
+                document.body.appendChild(link);
+                
+                // Descargar el archivo
+                link.click();
+                
+                // Limpiar
+                document.body.removeChild(link);
+                hideLoading();
+                showInfo('Exportación completada');
+            } else {
+                hideLoading();
+                showError('Error al exportar permisos: ' + (result.error || 'Error desconocido'));
+            }
+        })
+        .withFailureHandler(error => {
+            hideLoading();
+            showError('Error al exportar permisos: ' + error);
+        })
+        .getDetailedPermissions(window.odooSessionId, userId, isGroup);
+}
+
+/**
+ * Función para mostrar un análisis detallado de permisos
+ * @param {Array} userGroups - Grupos del usuario
+ */
+function showDetailedPermissionAnalysis(userGroups) {
+    // Crear modal para el análisis
+    const modalId = 'permissionAnalysisModal';
+    let modal = document.getElementById(modalId);
+    
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.id = modalId;
+        modal.tabIndex = '-1';
+        modal.setAttribute('aria-labelledby', 'permissionAnalysisModalLabel');
+        modal.setAttribute('aria-hidden', 'true');
+        
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title" id="permissionAnalysisModalLabel">
+                            <i class="fas fa-chart-bar me-2"></i>Análisis Detallado de Permisos
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="analysisSearchInput" class="form-control" placeholder="Buscar en el análisis...">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="d-flex justify-content-end">
+                                    <button id="exportAnalysisBtn" class="btn btn-outline-primary">
+                                        <i class="fas fa-file-export me-1"></i> Exportar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <ul class="nav nav-tabs" id="analysisTab" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="summary-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#summary-tab-pane" type="button" role="tab">Resumen</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="module-analysis-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#module-analysis-tab-pane" type="button" role="tab">Por Módulo</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="permission-types-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#permission-types-tab-pane" type="button" role="tab">Tipos de Permisos</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="inheritance-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#inheritance-tab-pane" type="button" role="tab">Herencia</button>
+                            </li>
+                        </ul>
+                        
+                        <div class="tab-content mt-3" id="analysisTabContent">
+                            <!-- Tab del Resumen -->
+                            <div class="tab-pane fade show active" id="summary-tab-pane" role="tabpanel" tabindex="0">
+                                <div class="row">
+                                    <div class="col-md-6" id="permissionSummaryChart1"></div>
+                                    <div class="col-md-6" id="permissionSummaryChart2"></div>
+                                </div>
+                                <div class="mt-4">
+                                    <h6 class="border-bottom pb-2">Estadísticas</h6>
+                                    <div id="permissionStats" class="row row-cols-2 row-cols-md-4 g-3 mt-2"></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Tab de Análisis por Módulo -->
+                            <div class="tab-pane fade" id="module-analysis-tab-pane" role="tabpanel" tabindex="0">
+                                <div id="moduleAnalysisContainer" class="table-responsive">
+                                    <table class="table table-sm table-striped table-hover">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Módulo</th>
+                                                <th>Modelos con Acceso</th>
+                                                <th>Leer</th>
+                                                <th>Escribir</th>
+                                                <th>Crear</th>
+                                                <th>Eliminar</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="moduleAnalysisBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <!-- Tab de Tipos de Permisos -->
+                            <div class="tab-pane fade" id="permission-types-tab-pane" role="tabpanel" tabindex="0">
+                                <div id="permissionTypesContainer">
+                                    <!-- Se llenará dinámicamente -->
+                                </div>
+                            </div>
+                            
+                            <!-- Tab de Herencia -->
+                            <div class="tab-pane fade" id="inheritance-tab-pane" role="tabpanel" tabindex="0">
+                                <div id="inheritanceContainer">
+                                    <!-- Se llenará dinámicamente -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Configurar evento para el botón de exportar
+        document.getElementById('exportAnalysisBtn').addEventListener('click', function() {
+            const selectedUserId = parseInt(document.querySelector('.user-item.active, .group-item.active').getAttribute('data-id'));
+            const isGroup = document.querySelector('.group-item.active') !== null;
+            exportPermissionsToCSV(selectedUserId, isGroup);
+        });
+    }
+    
+    // Mostrar el modal
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+    
+    // Mostrar indicador de carga dentro del modal
+    const modalBody = document.querySelector(`#${modalId} .modal-body`);
+    modalBody.innerHTML += `
+        <div id="analysisLoading" class="d-flex justify-content-center my-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+            <span class="ms-3">Generando análisis detallado...</span>
+        </div>
+    `;
+    
+    // Obtener el ID del usuario/grupo seleccionado
+    const selectedElement = document.querySelector('.user-item.active, .group-item.active');
+    if (!selectedElement) {
+        document.getElementById('analysisLoading').innerHTML = 'No hay ningún usuario o grupo seleccionado';
+        return;
+    }
+    
+    const selectedId = parseInt(selectedElement.getAttribute('data-id'));
+    const isGroup = selectedElement.classList.contains('group-item');
+    
+    // Solicitar permisos detallados al servidor
+    google.script.run
+        .withSuccessHandler(result => {
+            if (result.success) {
+                // Ocultar indicador de carga
+                document.getElementById('analysisLoading').style.display = 'none';
+                
+                // Actualizar cada pestaña con los datos recibidos
+                updateAnalysisTabs(result.permissions, userGroups);
+            } else {
+                document.getElementById('analysisLoading').innerHTML = 
+                    `<div class="alert alert-danger">Error al obtener permisos: ${result.error || 'Error desconocido'}</div>`;
+            }
+        })
+        .withFailureHandler(error => {
+            document.getElementById('analysisLoading').innerHTML = 
+                `<div class="alert alert-danger">Error: ${error}</div>`;
+        })
+        .getDetailedPermissions(window.odooSessionId, selectedId, isGroup);
+}
+
+/**
+ * Actualiza las pestañas del análisis con los datos recibidos
+ * @param {Array} permissions - Lista de permisos
+ * @param {Array} userGroups - Grupos del usuario
+ */
+function updateAnalysisTabs(permissions, userGroups) {
+    // Actualizar pestaña de resumen
+    updateSummaryTab(permissions);
+    
+    // Actualizar pestaña de análisis por módulo
+    updateModuleAnalysisTab(permissions);
+    
+    // Actualizar pestaña de tipos de permisos
+    updatePermissionTypesTab(permissions);
+    
+    // Actualizar pestaña de herencia
+    updateInheritanceTab(permissions, userGroups);
+}
+
+/**
+ * Actualiza la pestaña de resumen con gráficos y estadísticas
+ * @param {Array} permissions - Lista de permisos
+ */
+function updateSummaryTab(permissions) {
+    // Implementar visualizaciones y estadísticas de resumen
+    const statsContainer = document.getElementById('permissionStats');
+    
+    // Contar totales
+    const totalModels = new Set(permissions.map(p => p.model_name)).size;
+    const totalModules = new Set(permissions.map(p => p.module_name)).size;
+    
+    // Contar permisos por tipo
+    const readCount = permissions.filter(p => p.read).length;
+    const writeCount = permissions.filter(p => p.write).length;
+    const createCount = permissions.filter(p => p.create).length;
+    const unlinkCount = permissions.filter(p => p.unlink).length;
+    
+    // Contar permisos heredados vs directos
+    const inheritedCount = permissions.filter(p => 
+        p.read_inherited || p.write_inherited || p.create_inherited || p.unlink_inherited
+    ).length;
+    const directCount = totalModels - inheritedCount;
+    
+    // Actualizar estadísticas
+    statsContainer.innerHTML = `
+        <div class="col">
+            <div class="card h-100 border-primary">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-primary">Modelos</h6>
+                    <p class="card-text display-6">${totalModels}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 border-primary">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-primary">Módulos</h6>
+                    <p class="card-text display-6">${totalModules}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 border-success">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-success">Permisos Directos</h6>
+                    <p class="card-text display-6">${directCount}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 border-info">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-info">Permisos Heredados</h6>
+                    <p class="card-text display-6">${inheritedCount}</p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Crear gráficos (implementación básica para demostración)
+    // En una implementación real, usaríamos una biblioteca como Chart.js
+    const chart1Container = document.getElementById('permissionSummaryChart1');
+    chart1Container.innerHTML = `
+        <h6 class="border-bottom pb-2">Distribución de Permisos</h6>
+        <div class="d-flex flex-column align-items-center mt-3">
+            <div class="progress" style="height: 30px; width: 100%;">
+                <div class="progress-bar bg-info" role="progressbar" style="width: ${(readCount/totalModels)*100}%" 
+                     aria-valuenow="${readCount}" aria-valuemin="0" aria-valuemax="${totalModels}">
+                    Leer (${readCount})
+                </div>
+            </div>
+            <div class="progress mt-2" style="height: 30px; width: 100%;">
+                <div class="progress-bar bg-primary" role="progressbar" style="width: ${(writeCount/totalModels)*100}%" 
+                     aria-valuenow="${writeCount}" aria-valuemin="0" aria-valuemax="${totalModels}">
+                    Escribir (${writeCount})
+                </div>
+            </div>
+            <div class="progress mt-2" style="height: 30px; width: 100%;">
+                <div class="progress-bar bg-warning text-dark" role="progressbar" style="width: ${(createCount/totalModels)*100}%" 
+                     aria-valuenow="${createCount}" aria-valuemin="0" aria-valuemax="${totalModels}">
+                    Crear (${createCount})
+                </div>
+            </div>
+            <div class="progress mt-2" style="height: 30px; width: 100%;">
+                <div class="progress-bar bg-danger" role="progressbar" style="width: ${(unlinkCount/totalModels)*100}%" 
+                     aria-valuenow="${unlinkCount}" aria-valuemin="0" aria-valuemax="${totalModels}">
+                    Eliminar (${unlinkCount})
+                </div>
+            </div>
+        </div>
+    `;
+    
+    const chart2Container = document.getElementById('permissionSummaryChart2');
+    chart2Container.innerHTML = `
+        <h6 class="border-bottom pb-2">Origen de Permisos</h6>
+        <div class="d-flex justify-content-center align-items-center mt-3" style="height: 200px;">
+            <div class="position-relative" style="width: 200px; height: 200px;">
+                <div class="position-absolute top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center">
+                    <div class="rounded-circle bg-success" style="width: ${(directCount/totalModels)*100}%; height: ${(directCount/totalModels)*100}%; min-width: 50px; min-height: 50px; display: flex; align-items: center; justify-content: center;">
+                        <span class="text-white fw-bold">${Math.round((directCount/totalModels)*100)}%</span>
+                    </div>
+                </div>
+                <div class="position-absolute bottom-0 end-0 text-center">
+                    <span class="badge rounded-pill bg-success">Directos: ${directCount}</span>
+                </div>
+                <div class="position-absolute top-0 start-0 text-center">
+                    <span class="badge rounded-pill bg-info">Heredados: ${inheritedCount}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Actualiza la pestaña de análisis por módulo
+ * @param {Array} permissions - Lista de permisos
+ */
+function updateModuleAnalysisTab(permissions) {
+    const tableBody = document.getElementById('moduleAnalysisBody');
+    tableBody.innerHTML = '';
+    
+    // Agrupar permisos por módulo
+    const modulePermissions = {};
+    
+    permissions.forEach(perm => {
+        if (!modulePermissions[perm.module_name]) {
+            modulePermissions[perm.module_name] = {
+                models: new Set(),
+                read: 0,
+                write: 0,
+                create: 0,
+                unlink: 0
             };
         }
         
-        // Acumular permisos (OR)
-        if (access.perm_read) userPermissions[modelName].read = true;
-        if (access.perm_write) userPermissions[modelName].write = true;
-        if (access.perm_create) userPermissions[modelName].create = true;
-        if (access.perm_unlink) userPermissions[modelName].unlink = true;
+        modulePermissions[perm.module_name].models.add(perm.model_name);
+        if (perm.read) modulePermissions[perm.module_name].read++;
+        if (perm.write) modulePermissions[perm.module_name].write++;
+        if (perm.create) modulePermissions[perm.module_name].create++;
+        if (perm.unlink) modulePermissions[perm.module_name].unlink++;
     });
     
-    return userPermissions;
-}
-
-// Comparar permisos entre dos usuarios
-function compareUserPermissions(user1Perms, user2Perms) {
-    const differences = [];
-    const commonPerms = {};
-    const allPerms = {};
+    // Ordenar módulos por cantidad de modelos (descendente)
+    const sortedModules = Object.keys(modulePermissions).sort((a, b) => 
+        modulePermissions[b].models.size - modulePermissions[a].models.size
+    );
     
-    // Unir todos los modelos de ambos usuarios
-    const allModels = new Set([
-        ...Object.keys(user1Perms),
-        ...Object.keys(user2Perms)
-    ]);
-    
-    // Revisar cada modelo
-    allModels.forEach(modelName => {
-        const perms1 = user1Perms[modelName] || {
-            module: user2Perms[modelName] ? user2Perms[modelName].module : 'Desconocido',
-            read: false,
-            write: false,
-            create: false,
-            unlink: false
-        };
+    // Crear filas para cada módulo
+    sortedModules.forEach(moduleName => {
+        const moduleData = modulePermissions[moduleName];
+        const row = document.createElement('tr');
         
-        const perms2 = user2Perms[modelName] || {
-            module: user1Perms[modelName] ? user1Perms[modelName].module : 'Desconocido',
-            read: false,
-            write: false,
-            create: false,
-            unlink: false
-        };
+        row.innerHTML = `
+            <td>${moduleName}</td>
+            <td>${moduleData.models.size}</td>
+            <td>${moduleData.read} <small class="text-muted">(${Math.round((moduleData.read/moduleData.models.size)*100)}%)</small></td>
+            <td>${moduleData.write} <small class="text-muted">(${Math.round((moduleData.write/moduleData.models.size)*100)}%)</small></td>
+            <td>${moduleData.create} <small class="text-muted">(${Math.round((moduleData.create/moduleData.models.size)*100)}%)</small></td>
+            <td>${moduleData.unlink} <small class="text-muted">(${Math.round((moduleData.unlink/moduleData.models.size)*100)}%)</small></td>
+        `;
         
-        // Guardar todos los permisos
-        allPerms[modelName] = {
-            module: perms1.module,
-            user1: {
-                read: perms1.read,
-                write: perms1.write,
-                create: perms1.create,
-                unlink: perms1.unlink
-            },
-            user2: {
-                read: perms2.read,
-                write: perms2.write,
-                create: perms2.create,
-                unlink: perms2.unlink
-            }
-        };
-        
-        // Comprobar diferencias en cada tipo de permiso
-        ['read', 'write', 'create', 'unlink'].forEach(permType => {
-            if (perms1[permType] !== perms2[permType]) {
-                differences.push({
-                    module: perms1.module || perms2.module,
-                    model: modelName,
-                    permType: permType,
-                    user1Value: perms1[permType],
-                    user2Value: perms2[permType]
-                });
-            } else if (perms1[permType] === true && perms2[permType] === true) {
-                // Guardar permisos comunes (solo los que ambos usuarios tienen)
-                if (!commonPerms[modelName]) {
-                    commonPerms[modelName] = {
-                        module: perms1.module,
-                        permissions: []
-                    };
-                }
-                commonPerms[modelName].permissions.push(permType);
-            }
-        });
+        tableBody.appendChild(row);
     });
-    
-    return {
-        differences,
-        commonPerms,
-        allPerms
-    };
 }
-*/
 
-// Mostrar resultados de la comparación
-function showComparisonResults(comparison, user1, user2) {
-    // TAB 1: Diferencias
-    const differencesList = document.getElementById('differencesList');
-    differencesList.innerHTML = '';
+/**
+ * Actualiza la pestaña de tipos de permisos
+ * @param {Array} permissions - Lista de permisos
+ */
+function updatePermissionTypesTab(permissions) {
+    const container = document.getElementById('permissionTypesContainer');
     
-    const noDifferencesMsg = document.getElementById('noDifferencesMsg');
+    // Definir combinaciones de permisos
+    const permissionCombinations = [
+        { name: 'Solo lectura', filter: p => p.read && !p.write && !p.create && !p.unlink, color: 'info' },
+        { name: 'Lectura y escritura', filter: p => p.read && p.write && !p.create && !p.unlink, color: 'primary' },
+        { name: 'CRUD completo', filter: p => p.read && p.write && p.create && p.unlink, color: 'success' },
+        { name: 'Sin eliminar', filter: p => p.read && p.write && p.create && !p.unlink, color: 'warning' },
+        { name: 'Solo escribir', filter: p => !p.read && p.write, color: 'danger' },
+        { name: 'Otros patrones', filter: p => true, color: 'secondary' }
+    ];
     
-    if (comparison.differences.length === 0) {
-        noDifferencesMsg.style.display = 'block';
-    } else {
-        noDifferencesMsg.style.display = 'none';
-        
-        // Ordenar diferencias por módulo y modelo
-        const sortedDifferences = [...comparison.differences].sort((a, b) => {
-            if (a.module !== b.module) return a.module.localeCompare(b.module);
-            if (a.model !== b.model) return a.model.localeCompare(b.model);
-            return a.permType.localeCompare(b.permType);
-        });
-        
-        sortedDifferences.forEach(diff => {
-            const row = document.createElement('tr');
-            
-            // Traducir el tipo de permiso a un formato más amigable
-            const permTypeName = {
-                'read': 'Lectura',
-                'write': 'Escritura',
-                'create': 'Creación',
-                'unlink': 'Eliminación'
-            }[diff.permType] || diff.permType;
-            
-            // Iconos para valores true/false
-            const user1Icon = diff.user1Value ? 
-                '<i class="fas fa-check text-success"></i>' : 
-                '<i class="fas fa-times text-danger"></i>';
-            
-            const user2Icon = diff.user2Value ? 
-                '<i class="fas fa-check text-success"></i>' : 
-                '<i class="fas fa-times text-danger"></i>';
-            
-            row.innerHTML = `
-                <td>${diff.module}</td>
-                <td>${diff.model}</td>
-                <td>${permTypeName}</td>
-                <td class="text-center">${user1Icon}</td>
-                <td class="text-center">${user2Icon}</td>
-            `;
-            
-            differencesList.appendChild(row);
-        });
-    }
-    
-    // TAB 2: Permisos comunes
-    const commonPermsList = document.getElementById('commonPermsList');
-    commonPermsList.innerHTML = '';
-    
-    const noCommonPermsMsg = document.getElementById('noCommonPermsMsg');
-    const commonModels = Object.keys(comparison.commonPerms);
-    
-    if (commonModels.length === 0) {
-        noCommonPermsMsg.style.display = 'block';
-    } else {
-        noCommonPermsMsg.style.display = 'none';
-        
-        // Ordenar modelos por módulo y nombre
-        const sortedModels = [...commonModels].sort((a, b) => {
-            const moduleA = comparison.commonPerms[a].module;
-            const moduleB = comparison.commonPerms[b].module;
-            
-            if (moduleA !== moduleB) return moduleA.localeCompare(moduleB);
-            return a.localeCompare(b);
-        });
-        
-        sortedModels.forEach(modelName => {
-            const modelData = comparison.commonPerms[modelName];
-            const row = document.createElement('tr');
-            
-            // Traducir los tipos de permisos
-            const permLabels = modelData.permissions.map(permType => {
-                const labels = {
-                    'read': 'Lectura',
-                    'write': 'Escritura',
-                    'create': 'Creación',
-                    'unlink': 'Eliminación'
-                };
-                return labels[permType] || permType;
+    // Asignar modelos a cada combinación (sin duplicados)
+    const modelsSeen = new Set();
+    const combinationModels = permissionCombinations.map(comb => {
+        const models = permissions
+            .filter(p => !modelsSeen.has(p.model_name) && comb.filter(p))
+            .map(p => {
+                modelsSeen.add(p.model_name);
+                return p;
             });
-            
-            // Crear badges para cada permiso
-            const permBadges = permLabels.map(label => 
-                `<span class="badge bg-success me-1">${label}</span>`
-            ).join(' ');
-            
-            row.innerHTML = `
-                <td>${modelData.module}</td>
-                <td>${modelName}</td>
-                <td>${permBadges}</td>
-            `;
-            
-            commonPermsList.appendChild(row);
-        });
-    }
-    
-    // TAB 3: Todos los permisos
-    const allPermsList = document.getElementById('allPermsList');
-    allPermsList.innerHTML = '';
-    
-    // Ordenar todos los modelos por módulo y nombre
-    const allModels = Object.keys(comparison.allPerms).sort((a, b) => {
-        const moduleA = comparison.allPerms[a].module;
-        const moduleB = comparison.allPerms[b].module;
         
-        if (moduleA !== moduleB) return moduleA.localeCompare(moduleB);
-        return a.localeCompare(b);
+        return {
+            ...comb,
+            models
+        };
     });
     
-    // Filas para cada tipo de permiso y modelo
-    allModels.forEach(modelName => {
-        const modelData = comparison.allPerms[modelName];
+    // Construir interfaz
+    container.innerHTML = '';
+    
+    combinationModels.forEach(comb => {
+        if (comb.models.length === 0 && comb.name !== 'Otros patrones') return;
         
-        ['read', 'write', 'create', 'unlink'].forEach(permType => {
-            const row = document.createElement('tr');
-            
-            // Traducir el tipo de permiso
-            const permTypeName = {
-                'read': 'Lectura',
-                'write': 'Escritura',
-                'create': 'Creación',
-                'unlink': 'Eliminación'
-            }[permType] || permType;
-            
-            // Iconos para valores true/false
-            const user1Icon = modelData.user1[permType] ? 
-                '<i class="fas fa-check text-success"></i>' : 
-                '<i class="fas fa-times text-danger"></i>';
-            
-            const user2Icon = modelData.user2[permType] ? 
-                '<i class="fas fa-check text-success"></i>' : 
-                '<i class="fas fa-times text-danger"></i>';
-            
-            row.innerHTML = `
-                <td>${modelData.module}</td>
-                <td>${modelName}</td>
-                <td>${permTypeName}</td>
-                <td class="text-center">${user1Icon}</td>
-                <td class="text-center">${user2Icon}</td>
-            `;
-            
-            allPermsList.appendChild(row);
-        });
+        const card = document.createElement('div');
+        card.className = 'card mb-3';
+        
+        card.innerHTML = `
+            <div class="card-header bg-${comb.color} text-white">
+                ${comb.name} (${comb.models.length} modelos)
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Modelo</th>
+                                <th>Módulo</th>
+                                <th class="text-center">Leer</th>
+                                <th class="text-center">Escribir</th>
+                                <th class="text-center">Crear</th>
+                                <th class="text-center">Eliminar</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${comb.models.map(model => `
+                                <tr>
+                                    <td>${model.model_name}</td>
+                                    <td>${model.module_name}</td>
+                                    <td class="text-center">${model.read ? '<i class="fas fa-check text-success"></i>' : '<i class="fas fa-times text-danger"></i>'}</td>
+                                    <td class="text-center">${model.write ? '<i class="fas fa-check text-success"></i>' : '<i class="fas fa-times text-danger"></i>'}</td>
+                                    <td class="text-center">${model.create ? '<i class="fas fa-check text-success"></i>' : '<i class="fas fa-times text-danger"></i>'}</td>
+                                    <td class="text-center">${model.unlink ? '<i class="fas fa-check text-success"></i>' : '<i class="fas fa-times text-danger"></i>'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        
+        container.appendChild(card);
     });
 }
 
+/**
+ * Actualiza la pestaña de herencia de permisos
+ * @param {Array} permissions - Lista de permisos
+ * @param {Array} userGroups - Grupos del usuario
+ */
+function updateInheritanceTab(permissions, userGroups) {
+    const container = document.getElementById('inheritanceContainer');
+    
+    // Separar permisos directos y heredados
+    const directPerms = permissions.filter(p => 
+        !p.read_inherited && !p.write_inherited && !p.create_inherited && !p.unlink_inherited
+    );
+    
+    const inheritedPerms = permissions.filter(p => 
+        p.read_inherited || p.write_inherited || p.create_inherited || p.unlink_inherited
+    );
+    
+    // Construir interfaz
+    container.innerHTML = `
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            Los permisos pueden provenir directamente de grupos asignados o ser heredados a través de la jerarquía de grupos.
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card mb-3">
+                    <div class="card-header bg-success text-white">
+                        <i class="fas fa-check-circle me-2"></i>Permisos Directos (${directPerms.length})
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="list-group list-group-flush">
+                            ${directPerms.length > 0 
+                                ? directPerms.slice(0, 10).map(p => `
+                                    <div class="list-group-item">
+                                        <div class="fw-medium">${p.model_name}</div>
+                                        <div class="small text-muted">${p.module_name}</div>
+                                        <div class="d-flex gap-1 mt-1">
+                                            ${p.read ? '<span class="badge bg-info">Leer</span>' : ''}
+                                            ${p.write ? '<span class="badge bg-primary">Escribir</span>' : ''}
+                                            ${p.create ? '<span class="badge bg-warning text-dark">Crear</span>' : ''}
+                                            ${p.unlink ? '<span class="badge bg-danger">Eliminar</span>' : ''}
+                                        </div>
+                                    </div>
+                                `).join('')
+                                : '<div class="list-group-item text-muted">No hay permisos directos</div>'
+                            }
+                            ${directPerms.length > 10 
+                                ? `<div class="list-group-item text-center text-muted">
+                                     Y ${directPerms.length - 10} más...
+                                   </div>` 
+                                : ''
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <div class="card mb-3">
+                    <div class="card-header bg-info text-white">
+                        <i class="fas fa-share-alt me-2"></i>Permisos Heredados (${inheritedPerms.length})
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="list-group list-group-flush">
+                            ${inheritedPerms.length > 0 
+                                ? inheritedPerms.slice(0, 10).map(p => `
+                                    <div class="list-group-item">
+                                        <div class="fw-medium">${p.model_name}</div>
+                                        <div class="small text-muted">${p.module_name}</div>
+                                        <div class="d-flex gap-1 mt-1">
+                                            ${p.read_inherited ? '<span class="badge bg-info opacity-75">Leer</span>' : ''}
+                                            ${p.write_inherited ? '<span class="badge bg-primary opacity-75">Escribir</span>' : ''}
+                                            ${p.create_inherited ? '<span class="badge bg-warning text-dark opacity-75">Crear</span>' : ''}
+                                            ${p.unlink_inherited ? '<span class="badge bg-danger opacity-75">Eliminar</span>' : ''}
+                                        </div>
+                                    </div>
+                                `).join('')
+                                : '<div class="list-group-item text-muted">No hay permisos heredados</div>'
+                            }
+                            ${inheritedPerms.length > 10 
+                                ? `<div class="list-group-item text-center text-muted">
+                                     Y ${inheritedPerms.length - 10} más...
+                                   </div>` 
+                                : ''
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <i class="fas fa-sitemap me-2"></i>Cadenas de Herencia
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    La herencia de permisos fluye a través de los siguientes grupos:
+                </p>
+                <div id="inheritanceChains" class="d-flex flex-wrap gap-2">
+                    ${userGroups.map(group => `
+                        <div class="badge bg-light text-dark p-2 d-inline-flex align-items-center">
+                            <span>${group.name}</span>
+                            ${group.implied_ids && group.implied_ids.length 
+                                ? '<i class="fas fa-arrow-right mx-1"></i>' + 
+                                  group.implied_ids.map(id => {
+                                      const impliedGroup = dataCache.groups.find(g => g.id === id);
+                                      return impliedGroup ? impliedGroup.name : `Grupo ${id}`;
+                                  }).join(', ')
+                                : ''
+                            }
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Optimiza la carga de datos para bases de datos muy grandes
+ * @param {Array} models - Lista de modelos
+ * @param {number} userId - ID del usuario o grupo
+ * @param {boolean} isGroup - Indica si es un grupo o usuario
+ */
+function optimizeForLargeDatabase(models, userId, isGroup) {
+    showLoading('Optimizando para base de datos grande...');
+    
+    // Ordenar modelos por prioridad (basado en uso común)
+    const priorityModels = models.filter(model => 
+        model.indexOf('res.') === 0 || 
+        model.indexOf('ir.') === 0 || 
+        model.indexOf('mail.') === 0
+    );
+    
+    const otherModels = models.filter(model => 
+        model.indexOf('res.') !== 0 && 
+        model.indexOf('ir.') !== 0 && 
+        model.indexOf('mail.') !== 0
+    );
+    
+    // Cargar primero los modelos prioritarios
+    loadModelsInBatches([...priorityModels, ...otherModels], userId, isGroup, 10);
+}
+
+/**
+ * Carga modelos en lotes para mejorar rendimiento
+ * @param {Array} models - Lista de modelos
+ * @param {number} userId - ID del usuario o grupo
+ * @param {boolean} isGroup - Indica si es un grupo o usuario
+ * @param {number} batchSize - Tamaño del lote
+ * @param {number} startIndex - Índice de inicio para la carga en lotes
+ */
+function loadModelsInBatches(models, userId, isGroup, batchSize = 10, startIndex = 0) {
+    if (startIndex >= models.length) {
+        hideLoading();
+        showInfo('Carga completa', 'Listo');
+        return;
+    }
+    
+    // Seleccionar el lote actual
+    const currentBatch = models.slice(startIndex, startIndex + batchSize);
+    const progress = Math.round((startIndex / models.length) * 100);
+    
+    showLoading(`Cargando modelos (${progress}%)...`);
+    
+    // Crear promesas para cada modelo en el lote
+    const promises = currentBatch.map(model => 
+        new Promise((resolve, reject) => {
+            google.script.run
+                .withSuccessHandler(result => {
+                    if (result.success) {
+                        // Guardar en cache
+                        dataCache.permissions[model] = result.permissions;
+                        resolve(result.permissions);
+                    } else {
+                        console.warn(`Error al cargar permisos de ${model}: ${result.error}`);
+                        resolve(null); // Resolver con null para no romper la carga
+                    }
+                })
+                .withFailureHandler(error => {
+                    console.warn(`Error al cargar permisos de ${model}: ${error}`);
+                    resolve(null); // Resolver con null para no romper la carga
+                })
+                .getModelPermissions(window.odooSessionId, model, userId, isGroup);
+        })
+    );
+    
+    // Procesar todas las promesas del lote
+    Promise.all(promises)
+        .then(() => {
+            // Cargar siguiente lote
+            loadModelsInBatches(models, userId, isGroup, batchSize, startIndex + batchSize);
+        })
+        .catch(error => {
+            console.error('Error al cargar lote de modelos:', error);
+            hideLoading();
+            showError('Error al cargar permisos: ' + error);
+        });
+}
     </script>
 </body>
 </html>

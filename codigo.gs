@@ -22,6 +22,7 @@ function doGet() {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('Gestor de Permisos Odoo')
+    .setFaviconUrl('https://i.ibb.co/zhBxGWLt/SP-Icon.png')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -163,8 +164,7 @@ function getUsers(sessionId) {
     'res.users',
     'search_read',
     [],
-    {
-      domain: [
+    {      domain: [
         ['active', '=', true],
         ['share', '=', false], // Excluye usuarios portal y públicos
         ['login', 'not in', ['public', 'portal']], // Excluye usuarios especiales
@@ -172,7 +172,8 @@ function getUsers(sessionId) {
         ['login', 'not like', 'client_%'], // Excluye logins que comienzan con client_
         ['login', 'not like', 'partner_%'] // Excluye logins que comienzan con partner_
       ],
-      fields: ['id', 'name', 'login', 'groups_id', 'image_128', 'email', 'partner_id', 'create_date'],
+      fields: ['id', 'name', 'login', 'groups_id', 'image_128', 'email', 'partner_id', 'create_date', 'company_id'],
+      limit: 100, // Aseguramos obtener hasta 100 usuarios
       context: { 'bin_size': true }
     },
     sessionId
@@ -278,15 +279,21 @@ function getUsers(sessionId) {
     
     return true;
   });
-  filterStats.namePatternFiltered = beforeNameFilter - users.length;
-    // Obtenemos información adicional sobre grupos importantes para verificación
+  filterStats.namePatternFiltered = beforeNameFilter - users.length;    // Obtenemos información adicional sobre grupos importantes para verificación
   const adminGroupsResult = callOdooRPC(
     '/web/dataset/call_kw',
     'res.groups',
     'search_read',
     [],
     {
-      domain: [['name', 'like', 'Admin']],
+      domain: [
+        '|', '|', '|', '|',
+        ['name', 'ilike', 'Admin'],
+        ['name', 'ilike', 'Manager'],
+        ['name', 'ilike', 'Director'],
+        ['name', 'ilike', 'Supervisor'],
+        ['name', '=', 'Access Rights']
+      ],
       fields: ['id', 'name', 'users'],
       context: {}
     },
@@ -365,10 +372,10 @@ function getUsers(sessionId) {
     potentialClients.forEach(client => {
       console.log(`- ${client.name} (${client.login}): ${client.reasons.join(', ')}`);
     });
-    console.log("=============================================");
+  console.log("=============================================");
   }
   
-  return users;
+  return { success: true, users: users };
 }
 
 /**
@@ -383,13 +390,12 @@ function getGroups(sessionId) {
     'search_read',
     [],
     {
-      fields: ['id', 'name', 'category_id', 'implied_ids', 'users', 'comment', 'model_access'],
+      fields: ['id', 'name', 'category_id', 'implied_ids', 'users', 'comment', 'model_access', 'full_name'],
       context: {}
-    },
-    sessionId
+    },    sessionId
   );
   
-  return result.result || [];
+  return { success: true, groups: result.result || [] };
 }
 
 /**
@@ -406,11 +412,10 @@ function getModelAccess(sessionId) {
     {
       fields: ['id', 'name', 'model_id', 'group_id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink'],
       context: {}
-    },
-    sessionId
+    },    sessionId
   );
   
-  return result.result || [];
+  return { success: true, modelAccess: result.result || [] };
 }
 
 /**
@@ -455,15 +460,15 @@ function getModules(sessionId) {
       const moduleModels = {};
       
       modelsResult.result.forEach(model => {
-        const moduleNames = model.modules.split(',').map(m => m.trim());
+        const moduleNames = model.modules ? model.modules.split(',').map(m => m.trim()) : [];
         moduleNames.forEach(moduleName => {
           if (!moduleModels[moduleName]) {
             moduleModels[moduleName] = [];
           }
           moduleModels[moduleName].push({
             id: model.id,
-            name: model.name,
-            model: model.model
+            name: model.name, // Nombre descriptivo del modelo, ej: "Usuario"
+            model: model.model // Nombre técnico del modelo, ej: "res.users"
           });
         });
       });
@@ -476,7 +481,7 @@ function getModules(sessionId) {
     }
   }
   
-  return result.result || [];
+  return { success: true, modules: result.result || [] };
 }
 
 /**
@@ -657,6 +662,10 @@ function updateModelPermissions(data) {
         sessionId
       );
       
+      if (accessResult.error) {
+        return { success: false, error: 'Error al buscar registros de acceso: ' + (accessResult.error.message || accessResult.error.toString()) };
+      }
+      
       if (!accessResult.result || accessResult.result.length === 0) {
         // Si no existe un registro para este modelo y grupo, debemos crearlo
         return createModelAccess(sessionId, modelName, groupId, permissions);
@@ -702,6 +711,10 @@ function updateModelPermissions(data) {
         { fields: ['groups_id'], context: {} },
         sessionId
       );
+
+      if (userResult.error) {
+        return { success: false, error: 'Error al obtener datos del usuario: ' + (userResult.error.message || userResult.error.toString()) };
+      }
       
       if (!userResult.result || userResult.result.length === 0) {
         return { success: false, error: 'No se pudo encontrar el usuario' };
@@ -727,11 +740,19 @@ function updateModelPermissions(data) {
         },
         sessionId
       );
+
+      if (groupAccessResult.error) {
+        return { success: false, error: 'Error al buscar accesos de grupo: ' + (groupAccessResult.error.message || groupAccessResult.error.toString()) };
+      }
       
       if (!groupAccessResult.result || groupAccessResult.result.length === 0) {
         // No hay permisos existentes, necesitaríamos crear uno para el grupo principal del usuario
         // Esto requiere lógica adicional para determinar el grupo adecuado
-        return { success: false, error: 'No se encontraron permisos existentes para modificar' };
+        // Por ahora, devolvemos un error o consideramos crear un nuevo grupo de usuario específico.
+        // Para simplificar, si no hay registros de acceso para los grupos del usuario,
+        // no se puede modificar directamente. Se podría considerar crear un nuevo 'ir.model.access'
+        // para un grupo específico del usuario si esa es la lógica deseada.
+        return { success: false, error: 'No se encontraron permisos existentes para modificar para los grupos de este usuario. Considere crear un nuevo acceso para un grupo específico.' };
       }
       
       // Actualizar los permisos en los grupos del usuario
@@ -788,12 +809,15 @@ function createModelAccess(sessionId, modelName, groupId, permissions) {
       [],
       {
         domain: [['model', '=', modelName]],
-        fields: ['id', 'name'],
+        fields: ['id', 'name'], // 'name' aquí es el nombre descriptivo del modelo
         context: {}
       },
       sessionId
     );
     
+    if (modelResult.error) {
+        return { success: false, error: 'Error al buscar el modelo: ' + (modelResult.error.message || modelResult.error.toString()) };
+    }
     if (!modelResult.result || modelResult.result.length === 0) {
       return { success: false, error: 'No se pudo encontrar el modelo especificado' };
     }
@@ -810,12 +834,14 @@ function createModelAccess(sessionId, modelName, groupId, permissions) {
       sessionId
     );
     
+    if (groupResult.error) {
+        return { success: false, error: 'Error al buscar el grupo: ' + (groupResult.error.message || groupResult.error.toString()) };
+    }
     if (!groupResult.result || groupResult.result.length === 0) {
       return { success: false, error: 'No se pudo encontrar el grupo especificado' };
     }
     
-    const groupName = groupResult.result[0].name;
-    const accessName = `${modelName}_${groupName.replace(/\s+/g, '_').toLowerCase()}`;
+    const accessName = `${modelResult.result[0].name} / ${groupResult.result[0].name}`; // Un nombre más descriptivo
     
     // Crear el nuevo registro de acceso
     const createResult = callOdooRPC(
@@ -826,15 +852,18 @@ function createModelAccess(sessionId, modelName, groupId, permissions) {
         name: accessName,
         model_id: modelId,
         group_id: parseInt(groupId),
-        perm_read: permissions.perm_read,
-        perm_write: permissions.perm_write,
-        perm_create: permissions.perm_create,
-        perm_unlink: permissions.perm_unlink
+        perm_read: permissions.perm_read || false,
+        perm_write: permissions.perm_write || false,
+        perm_create: permissions.perm_create || false,
+        perm_unlink: permissions.perm_unlink || false
       }],
       { context: {} },
       sessionId
     );
     
+    if (createResult.error) {
+        return { success: false, error: 'No se pudo crear el registro de acceso: ' + (createResult.error.message || createResult.error.data.message || createResult.error.toString()) };
+    }
     if (!createResult.result) {
       return { success: false, error: 'No se pudo crear el registro de acceso' };
     }
@@ -856,9 +885,17 @@ function createModelAccess(sessionId, modelName, groupId, permissions) {
 function compareUserPermissions(sessionId, user1Id, user2Id) {
   try {
     // Obtenemos los datos de los usuarios
-    const allGroups = getGroups(sessionId);
-    const allModelAccess = getModelAccess(sessionId);
-    const allModules = getModules(sessionId);
+    const groupsResponse = getGroups(sessionId);
+    const modelAccessResponse = getModelAccess(sessionId);
+    const modulesResponse = getModules(sessionId);
+    
+    if (!groupsResponse.success || !modelAccessResponse.success || !modulesResponse.success) {
+      throw new Error('Error al obtener datos necesarios para la comparación');
+    }
+    
+    const allGroups = groupsResponse.groups;
+    const allModelAccess = modelAccessResponse.modelAccess;
+    const allModules = modulesResponse.modules;
     
     // Obtenemos los usuarios individuales con sus datos detallados
     const user1Data = getSingleUser(sessionId, user1Id);
@@ -874,11 +911,20 @@ function compareUserPermissions(sessionId, user1Id, user2Id) {
     
     // Realizamos la comparación
     const comparison = comparePermissions(user1Perms, user2Perms);
-    
-    return {
+      return {
       success: true,
-      user1: { id: user1Id, name: user1Data.name, login: user1Data.login },
-      user2: { id: user2Id, name: user2Data.name, login: user2Data.login },
+      user1: { 
+        id: user1Id, 
+        name: user1Data.name, 
+        login: user1Data.login, 
+        company_id: user1Data.company_id 
+      },
+      user2: { 
+        id: user2Id, 
+        name: user2Data.name, 
+        login: user2Data.login, 
+        company_id: user2Data.company_id 
+      },
       comparison: comparison
     };
   } catch (error) {
@@ -891,7 +937,7 @@ function compareUserPermissions(sessionId, user1Id, user2Id) {
 }
 
 /**
- * Obtiene los datos de un usuario específico con todos sus detalles
+ * Obtiene los datos de un usuario específico with todos sus detalles
  * @param {string} sessionId - ID de sesión de Odoo
  * @param {number} userId - ID del usuario
  * @returns {Object} Datos del usuario
@@ -901,10 +947,9 @@ function getSingleUser(sessionId, userId) {
     '/web/dataset/call_kw',
     'res.users',
     'search_read',
-    [],
-    {
+    [],    {
       domain: [['id', '=', userId]],
-      fields: ['id', 'name', 'login', 'groups_id', 'image_128', 'email', 'partner_id', 'create_date'],
+      fields: ['id', 'name', 'login', 'groups_id', 'image_128', 'email', 'partner_id', 'create_date', 'company_id'],
       context: { 'bin_size': true }
     },
     sessionId
@@ -1033,7 +1078,7 @@ function comparePermissions(user1Perms, user2Perms) {
   // Revisamos cada modelo
   allModels.forEach(modelName => {
     const perms1 = user1Perms[modelName] || {
-      module: user2Perms[modelName] ? user2Perms[modelName].module : 'Desconocido',
+      module: user2Perms[modelName] ? user2Perms[modelName].module : getModuleFromModel(modelName, []), // Intentar obtener módulo si no existe en perms1
       read: false,
       write: false,
       create: false,
@@ -1041,7 +1086,7 @@ function comparePermissions(user1Perms, user2Perms) {
     };
     
     const perms2 = user2Perms[modelName] || {
-      module: user1Perms[modelName] ? user1Perms[modelName].module : 'Desconocido',
+      module: user1Perms[modelName] ? user1Perms[modelName].module : getModuleFromModel(modelName, []), // Intentar obtener módulo si no existe en perms1
       read: false,
       write: false,
       create: false,
@@ -1050,7 +1095,7 @@ function comparePermissions(user1Perms, user2Perms) {
     
     // Guardamos todos los permisos
     allPerms[modelName] = {
-      module: perms1.module,
+      module: perms1.module, // Asumimos que perms1.module es la fuente de verdad o se calcula consistentemente
       user1: {
         read: perms1.read,
         write: perms1.write,
@@ -1067,19 +1112,21 @@ function comparePermissions(user1Perms, user2Perms) {
     
     // Comprobamos diferencias en cada tipo de permiso
     ['read', 'write', 'create', 'unlink'].forEach(permType => {
-      if (perms1[permType] !== perms2[permType]) {
+      const val1 = perms1[permType];
+      const val2 = perms2[permType];
+
+      if (val1 !== val2) {
         differences.push({
-          module: perms1.module || perms2.module,
+          module: perms1.module, // Usar el módulo de perms1
           model: modelName,
           permType: permType,
-          user1Value: perms1[permType],
-          user2Value: perms2[permType]
+          user1Value: val1,
+          user2Value: val2
         });
-      } else if (perms1[permType] === true && perms2[permType] === true) {
-        // Guardamos permisos comunes (solo los que ambos usuarios tienen)
+      } else if (val1 === true) { // Si son iguales y true, es un permiso común
         if (!commonPerms[modelName]) {
           commonPerms[modelName] = {
-            module: perms1.module,
+            module: perms1.module, // Usar el módulo de perms1
             permissions: []
           };
         }
@@ -1093,4 +1140,361 @@ function comparePermissions(user1Perms, user2Perms) {
     commonPerms,
     allPerms
   };
+}
+
+/**
+ * Obtiene los permisos de un modelo específico para un usuario o grupo
+ * @param {string} sessionId - ID de sesión de Odoo
+ * @param {string} modelName - Nombre técnico del modelo
+ * @param {number} entityId - ID del usuario o grupo
+ * @param {boolean} isGroup - Indica si entityId es un grupo
+ * @returns {Object} Permisos del modelo
+ */
+function getModelPermissions(sessionId, modelName, entityId, isGroup) {
+  try {
+    // Verificar parámetros
+    if (!sessionId || !modelName || !entityId) {
+      return { success: false, error: 'Faltan parámetros requeridos' };
+    }
+    
+    // Primero obtenemos el ID interno del modelo
+    const modelResult = callOdooRPC(
+      '/web/dataset/call_kw',
+      'ir.model',
+      'search_read',
+      [],
+      {
+        domain: [['model', '=', modelName]],
+        fields: ['id', 'name'],
+        context: {}
+      },
+      sessionId
+    );
+    
+    if (modelResult.error) {
+      return { success: false, error: 'Error al obtener información del modelo: ' + modelResult.error };
+    }
+    
+    if (!modelResult.result || modelResult.result.length === 0) {
+      return { success: false, error: 'No se encontró el modelo especificado' };
+    }
+    
+    const modelId = modelResult.result[0].id;
+    
+    // Si es un grupo, obtenemos los permisos directamente
+    if (isGroup) {
+      const accessResult = callOdooRPC(
+        '/web/dataset/call_kw',
+        'ir.model.access',
+        'search_read',
+        [],
+        {
+          domain: [
+            ['model_id', '=', modelId],
+            ['group_id', '=', parseInt(entityId)]
+          ],
+          fields: ['id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink'],
+          context: {}
+        },
+        sessionId
+      );
+      
+      if (accessResult.error) {
+        return { success: false, error: 'Error al obtener permisos: ' + accessResult.error };
+      }
+      
+      // Consolidar permisos (puede haber varios registros para el mismo modelo y grupo)
+      const permissions = {
+        read: false,
+        write: false,
+        create: false,
+        unlink: false
+      };
+      
+      if (accessResult.result && accessResult.result.length > 0) {
+        accessResult.result.forEach(access => {
+          permissions.read = permissions.read || access.perm_read;
+          permissions.write = permissions.write || access.perm_write;
+          permissions.create = permissions.create || access.perm_create;
+          permissions.unlink = permissions.unlink || access.perm_unlink;
+        });
+      }
+      
+      return { success: true, permissions: permissions };
+    } 
+    // Si es un usuario, necesitamos considerar permisos a través de grupos
+    else {
+      // Obtenemos los grupos del usuario
+      const userResult = callOdooRPC(
+        '/web/dataset/call_kw',
+        'res.users',
+        'read',
+        [[parseInt(entityId)]],
+        { fields: ['groups_id'], context: {} },
+        sessionId
+      );
+      
+      if (userResult.error) {
+        return { success: false, error: 'Error al obtener grupos del usuario: ' + userResult.error };
+      }
+      
+      if (!userResult.result || userResult.result.length === 0) {
+        return { success: false, error: 'No se encontró el usuario especificado' };
+      }
+      
+      const userGroups = userResult.result[0].groups_id;
+      
+      // Incluir grupos heredados
+      const allGroups = callOdooRPC(
+        '/web/dataset/call_kw',
+        'res.groups',
+        'search_read',
+        [],
+        { fields: ['id', 'implied_ids'], context: {} },
+        sessionId
+      ).result || [];
+      
+      const effectiveGroupIds = new Set(userGroups);
+      
+      // Añadir grupos heredados recursivamente
+      userGroups.forEach(gId => {
+        const inheritedGroups = getInheritedGroups(gId, allGroups);
+        inheritedGroups.forEach(id => effectiveGroupIds.add(id));
+      });
+      
+      // Obtenemos los permisos del modelo para todos los grupos del usuario
+      const accessResult = callOdooRPC(
+        '/web/dataset/call_kw',
+        'ir.model.access',
+        'search_read',
+        [],
+        {
+          domain: [
+            ['model_id', '=', modelId],
+            ['group_id', 'in', Array.from(effectiveGroupIds)]
+          ],
+          fields: ['id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink', 'group_id'],
+          context: {}
+        },
+        sessionId
+      );
+      
+      if (accessResult.error) {
+        return { success: false, error: 'Error al obtener permisos: ' + accessResult.error };
+      }
+      
+      // Consolidar permisos y marcar si son heredados o directos
+      const permissions = {
+        read: false,
+        write: false,
+        create: false,
+        unlink: false,
+        read_inherited: false,
+        write_inherited: false,
+        create_inherited: false,
+        unlink_inherited: false
+      };
+      
+      if (accessResult.result && accessResult.result.length > 0) {
+        // Primero procesamos los grupos directos
+        const directAccess = accessResult.result.filter(
+          access => userGroups.includes(access.group_id[0])
+        );
+        
+        directAccess.forEach(access => {
+          if (access.perm_read) permissions.read = true;
+          if (access.perm_write) permissions.write = true;
+          if (access.perm_create) permissions.create = true;
+          if (access.perm_unlink) permissions.unlink = true;
+        });
+        
+        // Luego procesamos los grupos heredados
+        const inheritedAccess = accessResult.result.filter(
+          access => !userGroups.includes(access.group_id[0])
+        );
+        
+        inheritedAccess.forEach(access => {
+          // Solo marcar como heredado si no ya está establecido directamente
+          if (access.perm_read && !permissions.read) {
+            permissions.read = true;
+            permissions.read_inherited = true;
+          }
+          if (access.perm_write && !permissions.write) {
+            permissions.write = true;
+            permissions.write_inherited = true;
+          }
+          if (access.perm_create && !permissions.create) {
+            permissions.create = true;
+            permissions.create_inherited = true;
+          }
+          if (access.perm_unlink && !permissions.unlink) {
+            permissions.unlink = true;
+            permissions.unlink_inherited = true;
+          }
+        });
+      }
+      
+      return { success: true, permissions: permissions };
+    }
+  } catch (error) {
+    console.error('Error en getModelPermissions:', error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Obtiene permisos detallados para análisis y exportación
+ * @param {string} sessionId - ID de sesión de Odoo
+ * @param {number} userId - ID del usuario o grupo
+ * @param {boolean} isGroup - Indica si es un grupo
+ * @returns {Object} Objeto con resultado y lista de permisos detallados
+ */
+function getDetailedPermissions(sessionId, userId, isGroup) {
+  try {
+    // Obtener todos los módulos
+    const modulesResult = getModules(sessionId);
+    if (!modulesResult.success) {
+      return { success: false, error: 'Error al obtener módulos: ' + modulesResult.error };
+    }
+    
+    // Obtener todos los modelos
+    const modelsResult = getModels(sessionId);
+    if (!modelsResult.success) {
+      return { success: false, error: 'Error al obtener modelos: ' + modelsResult.error };
+    }
+    
+    // Obtener grupos del usuario
+    let userGroups = [];
+    if (isGroup) {
+      // Si es un grupo, obtener sus grupos implícitos
+      const groupsResult = getGroups(sessionId);
+      if (!groupsResult.success) {
+        return { success: false, error: 'Error al obtener grupos: ' + groupsResult.error };
+      }
+      
+      const group = groupsResult.groups.find(g => g.id === userId);
+      if (!group) {
+        return { success: false, error: 'Grupo no encontrado' };
+      }
+      
+      userGroups = [userId];
+      
+      // Añadir grupos implícitos (heredados)
+      if (group.implied_ids && group.implied_ids.length > 0) {
+        userGroups = userGroups.concat(getInheritedGroups(userId, groupsResult.groups));
+      }
+    } else {
+      // Si es un usuario, obtener sus grupos asignados
+      const userResult = getUserDetails(sessionId, userId);
+      if (!userResult.success) {
+        return { success: false, error: 'Error al obtener usuario: ' + userResult.error };
+      }
+      
+      userGroups = userResult.user.groups_id;
+    }
+    
+    // Mapear módulos por ID
+    const modulesById = {};
+    modulesResult.modules.forEach(module => {
+      modulesById[module.id] = module;
+    });
+    
+    // Crear mapa de modelos por nombre técnico
+    const modelsByName = {};
+    modelsResult.models.forEach(model => {
+      modelsByName[model.model] = model;
+    });
+    
+    // Obtener permisos de acceso para todos los modelos
+    const result = fetchFromOdoo(sessionId, 'ir.model.access', 'search_read', {
+      domain: [],
+      fields: ['id', 'name', 'model_id', 'group_id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink']
+    });
+    
+    if (result.error) {
+      return { success: false, error: 'Error al obtener permisos: ' + result.error };
+    }
+    
+    // Filtrar permisos relevantes para los grupos del usuario
+    const allAccess = result.result;
+    const relevantAccess = allAccess.filter(access => 
+      // Incluir registros sin grupo (todos los usuarios) o registros para los grupos del usuario
+      !access.group_id || userGroups.includes(access.group_id[0])
+    );
+    
+    // Organizar permisos por modelo
+    const permissionsByModel = {};
+    
+    relevantAccess.forEach(access => {
+      const modelId = access.model_id[0];
+      const modelName = access.model_id[1];
+      const modelInfo = modelsByName[modelName];
+      
+      if (!modelInfo) {
+        return; // Omitir si no encontramos información del modelo
+      }
+      
+      const moduleName = modelInfo.modules && modelInfo.modules.length > 0 
+        ? modulesById[modelInfo.modules[0]].name 
+        : 'Base';
+      
+      if (!permissionsByModel[modelName]) {
+        permissionsByModel[modelName] = {
+          model_name: modelName,
+          model_id: modelId,
+          module_name: moduleName,
+          read: false,
+          write: false,
+          create: false,
+          unlink: false,
+          read_inherited: false,
+          write_inherited: false,
+          create_inherited: false,
+          unlink_inherited: false
+        };
+      }
+      
+      // Verificar si el permiso viene de un grupo directo o heredado
+      const isDirect = isGroup 
+        ? access.group_id && access.group_id[0] === userId 
+        : access.group_id && userGroups.includes(access.group_id[0]);
+      
+      // Actualizar permisos, dando prioridad a los directos sobre los heredados
+      if (access.perm_read) {
+        permissionsByModel[modelName].read = true;
+        if (!isDirect && !permissionsByModel[modelName].read_inherited) {
+          permissionsByModel[modelName].read_inherited = true;
+        }
+      }
+      
+      if (access.perm_write) {
+        permissionsByModel[modelName].write = true;
+        if (!isDirect && !permissionsByModel[modelName].write_inherited) {
+          permissionsByModel[modelName].write_inherited = true;
+        }
+      }
+      
+      if (access.perm_create) {
+        permissionsByModel[modelName].create = true;
+        if (!isDirect && !permissionsByModel[modelName].create_inherited) {
+          permissionsByModel[modelName].create_inherited = true;
+        }
+      }
+      
+      if (access.perm_unlink) {
+        permissionsByModel[modelName].unlink = true;
+        if (!isDirect && !permissionsByModel[modelName].unlink_inherited) {
+          permissionsByModel[modelName].unlink_inherited = true;
+        }
+      }
+    });
+    
+    // Convertir a array para la respuesta
+    const permissions = Object.values(permissionsByModel);
+    
+    return { success: true, permissions };
+  } catch (error) {
+    console.error('Error en getDetailedPermissions:', error);
+    return { success: false, error: error.toString() };
+  }
 }

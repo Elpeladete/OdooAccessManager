@@ -1,25 +1,24 @@
-/**
- * Gestor de Permisos Odoo
- * Aplicación web para administrar permisos de usuarios en Odoo 17 mediante APIs
- * @author: Desarrollado con GitHub Copilot
- * @date: Mayo 2025
- */
+// Configuración
+function getOdooConfig() {
+  const userProperties = PropertiesService.getUserProperties();
+  const config = userProperties.getProperty('odooConfig');
+  
+  if (config) {
+    return JSON.parse(config);
+  }
+  
+  return {};
+}
 
-// Configuración global
-const CONFIG = {
-  ODOO_URL: 'https://test-dye.quilsoft.com/',  // Reemplazar con tu URL de Odoo
-  API_KEY: PropertiesService.getScriptProperties().getProperty('ODOO_API_KEY'),
-  DATABASE: PropertiesService.getScriptProperties().getProperty('ODOO_DATABASE'),
-  USERNAME: PropertiesService.getScriptProperties().getProperty('ODOO_USERNAME'),
-  PASSWORD: PropertiesService.getScriptProperties().getProperty('ODOO_PASSWORD')
-};
+function saveOdooConfig(config) {
+  const userProperties = PropertiesService.getUserProperties();
+  userProperties.setProperty('odooConfig', JSON.stringify(config));
+  return true;
+}
 
-/**
- * Función que se ejecuta al abrir la aplicación web
- * @returns {HtmlOutput} Página HTML renderizada
- */
+// Función para crear la interfaz web
 function doGet() {
-  return HtmlService.createTemplateFromFile('Index')
+  return HtmlService.createTemplateFromFile('index')
     .evaluate()
     .setTitle('Gestor de Permisos Odoo')
     .setFaviconUrl('https://i.ibb.co/zhBxGWLt/SP-Icon.png')
@@ -27,1474 +26,1534 @@ function doGet() {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-/**
- * Incluye archivos HTML externos
- * @param {string} filename - Nombre del archivo a incluir
- * @returns {string} Contenido del archivo HTML
- */
+// Función para incluir archivos HTML
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
-/**
- * Autenticación con Odoo y obtención de ID de sesión
- * @returns {Object} Objeto con resultado de autenticación e ID de sesión
- */
-function authenticateWithOdoo() {
+// Añadir una función de depuración para ayudar a diagnosticar problemas de conexión
+
+// Función para probar la conexión con depuración
+function testOdooConnectionWithDebug(config) {
   try {
-    const url = `${CONFIG.ODOO_URL}/web/session/authenticate`;
-    const payload = {
-      jsonrpc: '2.0',
-      method: 'call',
-      params: {
-        db: CONFIG.DATABASE,
-        login: CONFIG.USERNAME,
-        password: CONFIG.PASSWORD
-      },
-      id: new Date().getTime()
-    };
+    // Registrar información de la solicitud
+    Logger.log('Intentando conectar a: ' + config.url);
     
-    const options = {
+    // Preparar URL
+    let url = config.url;
+    if (!url.endsWith('/')) {
+      url += '/';
+    }
+    url += 'xmlrpc/2/common';
+    
+    // Crear payload XML-RPC para autenticación
+    const payload = XmlRpc.createCall('authenticate', [
+      config.db,
+      config.username,
+      config.password,
+      {}
+    ]);
+    
+    // Registrar el payload (sin contraseña para seguridad)
+    const debugPayload = payload.replace(config.password, '********');
+    Logger.log('Payload XML-RPC: ' + debugPayload);
+    
+    // Realizar la solicitud
+    const response = UrlFetchApp.fetch(url, {
       method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify(payload),
+      contentType: 'text/xml',
+      payload: payload,
       muteHttpExceptions: true
-    };
-      const response = UrlFetchApp.fetch(url, options);
-    const result = JSON.parse(response.getContentText());
+    });
     
-    if (result.error) {
-      return { success: false, error: result.error.message };
+    // Registrar información de la respuesta
+    const statusCode = response.getResponseCode();
+    Logger.log('Código de respuesta HTTP: ' + statusCode);
+    
+    if (statusCode !== 200) {
+      return { 
+        success: false, 
+        error: 'Error HTTP: ' + statusCode,
+        details: response.getContentText()
+      };
     }
     
-    // Extraer el ID de sesión de las cookies de respuesta
-    let sessionId = null;
-    const headers = response.getAllHeaders();
-    if (headers && headers['Set-Cookie']) {
-      const cookies = headers['Set-Cookie'];
-      if (Array.isArray(cookies)) {
-        // Si hay múltiples cookies
-        for (const cookie of cookies) {
-          if (cookie.includes('session_id=')) {
-            sessionId = cookie.split('session_id=')[1].split(';')[0];
-            break;
-          }
-        }
-      } else if (typeof cookies === 'string') {
-        // Si es una sola cadena de cookies
-        if (cookies.includes('session_id=')) {
-          sessionId = cookies.split('session_id=')[1].split(';')[0];
-        }
-      }
+    const responseText = response.getContentText();
+    Logger.log('Respuesta: ' + responseText.substring(0, 200) + '...');
+    
+    // Intentar parsear la respuesta
+    const uid = XmlRpc.parseResponse(responseText);
+    
+    if (!uid) {
+      return { success: false, error: 'Autenticación fallida: UID nulo' };
     }
     
-    // Si no se pudo obtener el ID de sesión de las cookies, intentar obtenerlo del resultado
-    if (!sessionId && result.result && result.result.session_id) {
-      sessionId = result.result.session_id;
-    }
+    return { success: true, uid: uid };
+  } catch (error) {
+    Logger.log('Error en la conexión: ' + error.toString());
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Modificar la función testOdooConnection para usar la nueva función de depuración
+function testOdooConnection(config) {
+  const result = testOdooConnectionWithDebug(config);
+  
+  if (result.success) {
+    return { success: true, count: result.uid };
+  } else {
+    return { success: false, error: result.error };
+  }
+}
+
+// Obtener usuarios y grupos
+function getOdooUsersAndGroups(config) {
+  try {
+    // Obtener usuarios
+    const users = callOdooAPI(config, 'res.users', 'search_read', 
+      [[['active', 'in', [true, false]]]],
+      { fields: ['id', 'name', 'login', 'email', 'active'] }
+    );
     
-    if (!sessionId) {
-      console.error('No se pudo obtener el ID de sesión');
-      return { success: false, error: 'No se pudo obtener el ID de sesión' };
-    }
+    // Obtener grupos
+    const groups = callOdooAPI(config, 'res.groups', 'search_read', 
+      [[]],
+      { fields: ['id', 'name', 'category_id'] }
+    );
+    
+    // Formatear datos
+    const formattedUsers = users.map(user => ({
+      id: user.id,
+      name: user.name,
+      login: user.login,
+      email: user.email,
+      active: user.active,
+      type: 'user'
+    }));
+    
+    const formattedGroups = groups.map(group => ({
+      id: group.id,
+      name: group.name,
+      category: group.category_id ? group.category_id[1] : null,
+      type: 'group'
+    }));
     
     return { 
       success: true, 
-      sessionId: sessionId,
-      userId: result.result.uid
+      data: [...formattedUsers, ...formattedGroups]
     };
   } catch (error) {
-    console.error('Error de autenticación:', error);
     return { success: false, error: error.toString() };
   }
 }
 
-/**
- * Realiza una llamada RPC a Odoo
- * @param {string} endpoint - Endpoint de la API de Odoo
- * @param {string} model - Modelo de Odoo
- * @param {string} method - Método a llamar
- * @param {Array} args - Argumentos para el método
- * @param {Object} kwargs - Argumentos con nombre
- * @param {string} sessionId - ID de sesión de Odoo
- * @returns {Object} Respuesta de Odoo
- */
-function callOdooRPC(endpoint, model, method, args = [], kwargs = {}, sessionId) {
+// Obtener grupos de un usuario
+function getUserGroups(config, userId) {
   try {
-    const url = `${CONFIG.ODOO_URL}${endpoint}`;
-    const payload = {
-      jsonrpc: '2.0',
-      method: 'call',
-      params: {
-        model: model,
-        method: method,
-        args: args,
-        kwargs: kwargs
-      },
-      id: new Date().getTime()
-    };
-    
-    const options = {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true,
-      headers: {
-        'Cookie': `session_id=${sessionId}`
-      }
-    };
-    
-    const response = UrlFetchApp.fetch(url, options);
-    return JSON.parse(response.getContentText());
-  } catch (error) {
-    console.error('Error en llamada RPC:', error);
-    return { error: error.toString() };
-  }
-}
-
-/**
- * Obtiene todos los usuarios de Odoo
- * @param {string} sessionId - ID de sesión de Odoo
- * @returns {Array} Lista de usuarios
- */
-function getUsers(sessionId) {
-  // Primero obtenemos los usuarios del sistema excluyendo los usuarios portal y públicos
-  const result = callOdooRPC(
-    '/web/dataset/call_kw',
-    'res.users',
-    'search_read',
-    [],
-    {      domain: [
-        ['active', '=', true],
-        ['share', '=', false], // Excluye usuarios portal y públicos
-        ['login', 'not in', ['public', 'portal']], // Excluye usuarios especiales
-        ['login', 'not like', 'customer_%'], // Excluye logins que comienzan con customer_
-        ['login', 'not like', 'client_%'], // Excluye logins que comienzan con client_
-        ['login', 'not like', 'partner_%'] // Excluye logins que comienzan con partner_
-      ],
-      fields: ['id', 'name', 'login', 'groups_id', 'image_128', 'email', 'partner_id', 'create_date', 'company_id'],
-      limit: 100, // Aseguramos obtener hasta 100 usuarios
-      context: { 'bin_size': true }
-    },
-    sessionId
-  );
-  
-  // Filtramos cualquier posible cliente que se haya colado
-  let users = result.result || [];
-  console.log(`Usuarios iniciales desde Odoo: ${users.length}`);
-  
-  // Registro para auditoría de filtrado
-  let filterStats = {
-    initial: users.length,
-    portalGroupsFiltered: 0,
-    emailFiltered: 0,
-    groupCountFiltered: 0,
-    createDateFiltered: 0,
-    namePatternFiltered: 0,
-    adminUsers: 0,
-    final: 0
-  };
-  
-  // Obtenemos los IDs de los grupos de portal y público para asegurarnos de excluir usuarios con esos permisos
-  const groupsResult = callOdooRPC(
-    '/web/dataset/call_kw',
-    'res.groups',
-    'search_read',
-    [],
-    {
-      domain: [['name', 'in', ['Portal', 'Public', 'Customer', 'Partner', 'Client']]],
-      fields: ['id', 'name'],
-      context: {}
-    },
-    sessionId
-  );
-    if (groupsResult.result && groupsResult.result.length > 0) {
-    const portalGroupIds = groupsResult.result.map(group => group.id);
-    
-    // Filtramos los usuarios que pertenecen a grupos de portal o público
-    const beforePortalFilter = users.length;
-    users = users.filter(user => {
-      // Verificar si el usuario tiene algún grupo que no sea de portal o público
-      const hasInternalGroups = user.groups_id.some(groupId => !portalGroupIds.includes(groupId));
-      return hasInternalGroups;
-    });
-    filterStats.portalGroupsFiltered = beforePortalFilter - users.length;
-  }
-  
-  // Como verificación final, aseguramos que solo se incluyan usuarios con nomenclatura de email corporativo
-  // o con grupos específicos que indicarían que son usuarios internos
-  const beforeEmailFilter = users.length;
-  users = users.filter(user => {
-    // Si no tiene email, pero tiene grupos, lo consideramos usuario del sistema
-    if (!user.email && user.groups_id.length > 0) return true;
-    
-    // Si tiene email con nomenclatura corporativa (no @gmail, @hotmail, etc.)
-    if (user.email && (
-      !user.email.includes('@gmail.com') && 
-      !user.email.includes('@hotmail.com') && 
-      !user.email.includes('@outlook.com') &&
-      !user.email.includes('@yahoo.com')
-    )) return true;
-    
-    // Verificar si tiene un mínimo de grupos que indicaría un usuario del sistema
-    if (user.groups_id.length >= 2) return true; // Usuarios reales suelen tener al menos un par de grupos
-    
-    return false;
-  });
-  filterStats.emailFiltered = beforeEmailFilter - users.length;
-  
-  // Filtrar por número de grupos (menos de 2 grupos podría indicar un cliente)
-  const beforeGroupFilter = users.length;
-  users = users.filter(user => {
-    if (user.groups_id.length < 2) return false;
-    return true;
-  });
-  filterStats.groupCountFiltered = beforeGroupFilter - users.length;
-  
-  // Verificar fecha de creación
-  const beforeDateFilter = users.length;
-  users = users.filter(user => {
-    // Si no hay fecha de creación, no podemos filtrar por este criterio
-    if (!user.create_date) return true;
-    
-    const createDate = new Date(user.create_date);
-    const threeMonthsAgo = new Date();
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-    
-    // Si el usuario fue creado hace más de 3 meses y tiene pocos grupos, posiblemente es un cliente
-    if (createDate < threeMonthsAgo && user.groups_id.length < 3) return false;
-    
-    return true;
-  });
-  filterStats.createDateFiltered = beforeDateFilter - users.length;
-  
-  // Verificar patrones en el nombre
-  const beforeNameFilter = users.length;
-  users = users.filter(user => {
-    // Verificar si el nombre del usuario tiene indicaciones de ser un cliente
-    const clientNamePatterns = ['cliente', 'customer', 'proveedor', 'vendor', 'partner', 'clt_', 'cli_', 'company'];
-    if (user.name && clientNamePatterns.some(pattern => user.name.toLowerCase().includes(pattern))) {
-      return false;
-    }
-    
-    return true;
-  });
-  filterStats.namePatternFiltered = beforeNameFilter - users.length;    // Obtenemos información adicional sobre grupos importantes para verificación
-  const adminGroupsResult = callOdooRPC(
-    '/web/dataset/call_kw',
-    'res.groups',
-    'search_read',
-    [],
-    {
-      domain: [
-        '|', '|', '|', '|',
-        ['name', 'ilike', 'Admin'],
-        ['name', 'ilike', 'Manager'],
-        ['name', 'ilike', 'Director'],
-        ['name', 'ilike', 'Supervisor'],
-        ['name', '=', 'Access Rights']
-      ],
-      fields: ['id', 'name', 'users'],
-      context: {}
-    },
-    sessionId
-  );
-  
-  if (adminGroupsResult.result && adminGroupsResult.result.length > 0) {
-    const adminGroupIds = adminGroupsResult.result.map(group => group.id);
-    
-    // Marcar usuarios con permisos administrativos para destacarlos en la UI
-    users.forEach(user => {
-      user.is_admin = user.groups_id.some(groupId => adminGroupIds.includes(groupId));
-      if (user.is_admin) {
-        filterStats.adminUsers++;
-      }
-    });
-  }
-    filterStats.final = users.length;
-  
-  // Registrar estadísticas de filtrado para auditoría
-  console.log("===== ESTADÍSTICAS DE FILTRADO DE USUARIOS =====");
-  console.log(`- Usuarios iniciales: ${filterStats.initial}`);
-  console.log(`- Filtrados por grupos de portal: ${filterStats.portalGroupsFiltered}`);
-  console.log(`- Filtrados por email: ${filterStats.emailFiltered}`);
-  console.log(`- Filtrados por número de grupos: ${filterStats.groupCountFiltered}`);
-  console.log(`- Filtrados por fecha de creación: ${filterStats.createDateFiltered}`);
-  console.log(`- Filtrados por patrón de nombre: ${filterStats.namePatternFiltered}`);
-  console.log(`- Usuarios administrativos: ${filterStats.adminUsers}`);
-  console.log(`- Usuarios finales: ${filterStats.final}`);
-  console.log("=============================================");
-  
-  // Analizamos si todavía podría haber clientes en la lista final
-  let potentialClients = [];
-  users.forEach(user => {
-    let reasons = [];
-    
-    // Verificar patrones en nombres
-    const clientNamePatterns = ['cliente', 'customer', 'proveedor', 'vendor', 'partner', 'empresa', 'company'];
-    if (user.name && clientNamePatterns.some(pattern => user.name.toLowerCase().includes(pattern))) {
-      reasons.push('Nombre con patrón de cliente');
-    }
-    
-    // Email personal
-    if (user.email && (
-      user.email.includes('@gmail.com') || 
-      user.email.includes('@hotmail.com') || 
-      user.email.includes('@outlook.com') ||
-      user.email.includes('@yahoo.com')
-    )) {
-      reasons.push('Email personal');
-    }
-    
-    // Pocos grupos
-    if (user.groups_id.length < 2) {
-      reasons.push('Pocos grupos asignados');
-    }
-    
-    // Partner ID alto
-    if (user.partner_id && typeof user.partner_id[0] === 'number' && user.partner_id[0] > 100) {
-      reasons.push('Partner ID alto');
-    }
-    
-    if (reasons.length > 0) {
-      potentialClients.push({
-        id: user.id,
-        name: user.name,
-        login: user.login,
-        reasons: reasons
-      });
-    }
-  });
-  
-  // Registrar los posibles clientes que aún podrían estar en la lista
-  if (potentialClients.length > 0) {
-    console.log("POSIBLES CLIENTES DETECTADOS EN LA LISTA FINAL:");
-    potentialClients.forEach(client => {
-      console.log(`- ${client.name} (${client.login}): ${client.reasons.join(', ')}`);
-    });
-  console.log("=============================================");
-  }
-  
-  return { success: true, users: users };
-}
-
-/**
- * Obtiene todos los grupos de Odoo
- * @param {string} sessionId - ID de sesión de Odoo
- * @returns {Array} Lista de grupos con información de herencia
- */
-function getGroups(sessionId) {
-  const result = callOdooRPC(
-    '/web/dataset/call_kw',
-    'res.groups',
-    'search_read',
-    [],
-    {
-      fields: ['id', 'name', 'category_id', 'implied_ids', 'users', 'comment', 'model_access', 'full_name'],
-      context: {}
-    },    sessionId
-  );
-  
-  return { success: true, groups: result.result || [] };
-}
-
-/**
- * Obtiene información detallada de permisos de modelo
- * @param {string} sessionId - ID de sesión de Odoo
- * @returns {Array} Lista de permisos de modelo
- */
-function getModelAccess(sessionId) {
-  const result = callOdooRPC(
-    '/web/dataset/call_kw',
-    'ir.model.access',
-    'search_read',
-    [],
-    {
-      fields: ['id', 'name', 'model_id', 'group_id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink'],
-      context: {}
-    },    sessionId
-  );
-  
-  return { success: true, modelAccess: result.result || [] };
-}
-
-/**
- * Obtiene información de módulos instalados con datos ampliados
- * @param {string} sessionId - ID de sesión de Odoo
- * @returns {Array} Lista de módulos instalados con información ampliada
- */
-function getModules(sessionId) {
-  const result = callOdooRPC(
-    '/web/dataset/call_kw',
-    'ir.module.module',
-    'search_read',
-    [],
-    {
-      domain: [['state', '=', 'installed']],
-      fields: ['id', 'name', 'shortdesc', 'category_id', 'state', 'application', 'icon', 'summary', 'latest_version'],
-      context: {}
-    },
-    sessionId
-  );
-  
-  // Añadimos una consulta para obtener los objetos (modelos) de cada módulo
-  if (result.result && result.result.length > 0) {
-    const moduleIds = result.result.map(mod => mod.id);
-    
-    // Obtener modelos asociados a estos módulos
-    const modelsResult = callOdooRPC(
-      '/web/dataset/call_kw',
-      'ir.model',
-      'search_read',
-      [],
-      {
-        domain: [['modules', 'like', result.result.map(mod => mod.name).join('|')]],
-        fields: ['id', 'name', 'model', 'modules'],
-        context: {}
-      },
-      sessionId
+    const user = callOdooAPI(config, 'res.users', 'read', 
+      [userId],
+      { fields: ['groups_id'] }
     );
     
-    // Agrupar modelos por módulo
-    if (modelsResult.result && modelsResult.result.length > 0) {
-      const moduleModels = {};
-      
-      modelsResult.result.forEach(model => {
-        const moduleNames = model.modules ? model.modules.split(',').map(m => m.trim()) : [];
-        moduleNames.forEach(moduleName => {
-          if (!moduleModels[moduleName]) {
-            moduleModels[moduleName] = [];
-          }
-          moduleModels[moduleName].push({
-            id: model.id,
-            name: model.name, // Nombre descriptivo del modelo, ej: "Usuario"
-            model: model.model // Nombre técnico del modelo, ej: "res.users"
-          });
+    if (!user || !user.length || !user[0].groups_id || !user[0].groups_id.length) {
+      return { success: true, data: [] };
+    }
+    
+    const groupIds = user[0].groups_id;
+    const groups = callOdooAPI(config, 'res.groups', 'read', 
+      [groupIds],
+      { fields: ['id', 'name', 'category_id'] }
+    );
+    
+    const formattedGroups = groups.map(group => ({
+      id: group.id,
+      name: group.name,
+      category: group.category_id ? group.category_id[1] : null
+    }));
+    
+    return { success: true, data: formattedGroups };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Obtener usuarios de un grupo
+function getGroupUsers(config, groupId) {
+  try {
+    const group = callOdooAPI(config, 'res.groups', 'read', 
+      [groupId],
+      { fields: ['users'] }
+    );
+    
+    if (!group || !group.length || !group[0].users || !group[0].users.length) {
+      return { success: true, data: [] };
+    }
+    
+    const userIds = group[0].users;
+    const users = callOdooAPI(config, 'res.users', 'read', 
+      [userIds],
+      { fields: ['id', 'name', 'login', 'email', 'active'] }
+    );
+    
+    const formattedUsers = users.map(user => ({
+      id: user.id,
+      name: user.name,
+      login: user.login,
+      email: user.email,
+      active: user.active
+    }));
+    
+    return { success: true, data: formattedUsers };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Obtener grupos heredados
+function getGroupImpliedIds(config, groupId) {
+  try {
+    const group = callOdooAPI(config, 'res.groups', 'read', 
+      [groupId],
+      { fields: ['implied_ids'] }
+    );
+    
+    if (!group || !group.length || !group[0].implied_ids || !group[0].implied_ids.length) {
+      return { success: true, data: [] };
+    }
+    
+    const impliedIds = group[0].implied_ids;
+    const impliedGroups = callOdooAPI(config, 'res.groups', 'read', 
+      [impliedIds],
+      { fields: ['id', 'name'] }
+    );
+    
+    return { success: true, data: impliedGroups };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Obtener módulos
+function getOdooModules(config) {
+  try {
+    const modules = callOdooAPI(config, 'ir.module.module', 'search_read', 
+      [[]],
+      { fields: ['id', 'name', 'shortdesc', 'description', 'state', 'application', 'latest_version'] }
+    );
+    
+    const formattedModules = modules.map(module => ({
+      id: module.id,
+      technical_name: module.name,
+      name: module.shortdesc,
+      description: module.description,
+      installed: module.state === 'installed',
+      application: module.application,
+      version: module.latest_version
+    }));
+    
+    return { success: true, data: formattedModules };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Obtener modelos de un módulo
+function getModuleModels(config, moduleId) {
+  try {
+    // Primero obtenemos el nombre técnico del módulo
+    const module = callOdooAPI(config, 'ir.module.module', 'read', 
+      [moduleId],
+      { fields: ['name'] }
+    );
+    
+    if (!module || !module.length) {
+      return { success: false, error: 'Módulo no encontrado' };
+    }
+    
+    const moduleName = module[0].name;
+    
+    // Obtenemos los modelos que pertenecen a este módulo
+    const models = callOdooAPI(config, 'ir.model', 'search_read', 
+      [[['model', 'like', moduleName + '.%']]],
+      { fields: ['id', 'name', 'model', 'state'] }
+    );
+    
+    // También buscamos modelos que puedan estar en el módulo pero no sigan la convención de nomenclatura
+    const moduleInfo = callOdooAPI(config, 'ir.model.data', 'search_read', 
+      [[['module', '=', moduleName], ['model', '=', 'ir.model']]],
+      { fields: ['res_id'] }
+    );
+    
+    let additionalModels = [];
+    if (moduleInfo && moduleInfo.length) {
+      const modelIds = moduleInfo.map(item => item.res_id);
+      additionalModels = callOdooAPI(config, 'ir.model', 'read', 
+        [modelIds],
+        { fields: ['id', 'name', 'model', 'state'] }
+      );
+    }
+    
+    // Combinar y eliminar duplicados
+    const allModels = [...models, ...additionalModels];
+    const uniqueModels = [];
+    const modelIds = new Set();
+    
+    allModels.forEach(model => {
+      if (!modelIds.has(model.id)) {
+        modelIds.add(model.id);
+        uniqueModels.push({
+          id: model.id,
+          name: model.name,
+          model: model.model,
+          state: model.state
         });
-      });
-      
-      // Añadir la información de modelos a cada módulo
-      result.result.forEach(module => {
-        module.models = moduleModels[module.name] || [];
-        module.model_count = module.models.length;
-      });
-    }
+      }
+    });
+    
+    return { success: true, data: uniqueModels };
+  } catch (error) {
+    return { success: false, error: error.toString() };
   }
-  
-  return { success: true, modules: result.result || [] };
 }
 
-/**
- * Asigna un grupo a un usuario
- * @param {string} sessionId - ID de sesión de Odoo
- * @param {number} userId - ID del usuario
- * @param {number} groupId - ID del grupo a asignar
- * @returns {Object} Resultado de la operación
- */
-function assignGroupToUser(sessionId, userId, groupId) {
+// Modificar la función getAccessRights para mejorar la búsqueda de permisos
+function getAccessRights(config, entityType, entityId, moduleId) {
   try {
-    // Primero obtenemos los grupos actuales del usuario
-    const userInfo = callOdooRPC(
-      '/web/dataset/call_kw',
-      'res.users',
-      'read',
-      [[userId]],
-      { fields: ['groups_id'] },
-      sessionId
-    );
+    // Registrar información de diagnóstico
+    Logger.log(`Buscando derechos de acceso para: entityType=${entityType}, entityId=${entityId}, moduleId=${moduleId}`);
     
-    if (userInfo.error) {
-      return { success: false, error: userInfo.error };
+    // Obtener modelos del módulo
+    const moduleModels = getModuleModels(config, moduleId);
+    if (!moduleModels.success || !moduleModels.data.length) {
+      Logger.log("No se encontraron modelos para el módulo");
+      return { 
+        success: true, 
+        data: [],
+        debug: {
+          message: "No se encontraron modelos para este módulo",
+          moduleId: moduleId
+        }
+      };
     }
     
-    const currentGroups = userInfo.result[0].groups_id;
+    // Construir dominio para la búsqueda
+    let domain = [];
+    const modelIds = moduleModels.data.map(model => model.id);
     
-    // Verificamos si el grupo ya está asignado
-    if (currentGroups.includes(groupId)) {
-      return { success: true, message: 'El grupo ya estaba asignado al usuario' };
-    }
-    
-    // Añadimos el nuevo grupo
-    const newGroups = [...currentGroups, groupId];
-    
-    // Actualizamos el usuario con los nuevos grupos
-    const result = callOdooRPC(
-      '/web/dataset/call_kw',
-      'res.users',
-      'write',
-      [[userId], { groups_id: [[6, 0, newGroups]] }],
-      {},
-      sessionId
+    // Primero intentamos buscar por modelo sin filtrar por grupo/usuario
+    // para verificar si hay permisos en general
+    const allAccessRights = callOdooAPI(config, 'ir.model.access', 'search_read', 
+      [[['model_id', 'in', modelIds]]],
+      { fields: ['id', 'name', 'model_id', 'group_id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink'] }
     );
     
+    Logger.log(`Total de permisos encontrados para los modelos: ${allAccessRights ? allAccessRights.length : 0}`);
+    
+    // Ahora aplicamos el filtro por entidad
+    if (entityType === 'user') {
+      // Para usuarios, necesitamos obtener sus grupos
+      const user = callOdooAPI(config, 'res.users', 'read', 
+        [entityId],
+        { fields: ['groups_id'] }
+      );
+      
+      if (!user || !user.length || !user[0].groups_id || !user[0].groups_id.length) {
+        Logger.log("Usuario no tiene grupos asignados");
+        // Buscar permisos sin grupo (globales)
+        domain.push(['group_id', '=', false]);
+      } else {
+        Logger.log(`Grupos del usuario: ${user[0].groups_id.join(', ')}`);
+        // Buscar permisos para los grupos del usuario o permisos sin grupo
+        domain.push('|', ['group_id', '=', false], ['group_id', 'in', user[0].groups_id]);
+      }
+    } else {
+      // Para grupos, buscamos permisos específicos del grupo o permisos sin grupo
+      domain.push('|', ['group_id', '=', false], ['group_id', '=', entityId]);
+    }
+    
+    // Añadir filtro por modelo
+    domain.push(['model_id', 'in', modelIds]);
+    
+    Logger.log(`Dominio de búsqueda: ${JSON.stringify(domain)}`);
+    
+    // Obtener derechos de acceso
+    const accessRights = callOdooAPI(config, 'ir.model.access', 'search_read', 
+      [domain],
+      { fields: ['id', 'name', 'model_id', 'group_id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink'] }
+    );
+    
+    Logger.log(`Permisos encontrados con filtros: ${accessRights ? accessRights.length : 0}`);
+    
+    // Si no hay resultados, intentar una búsqueda más amplia
+    if (!accessRights || accessRights.length === 0) {
+      // Intentar buscar permisos globales (sin grupo asignado)
+      const globalRights = callOdooAPI(config, 'ir.model.access', 'search_read', 
+        [[['model_id', 'in', modelIds], ['group_id', '=', false]]],
+        { fields: ['id', 'name', 'model_id', 'group_id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink'] }
+      );
+      
+      Logger.log(`Permisos globales encontrados: ${globalRights ? globalRights.length : 0}`);
+      
+      if (globalRights && globalRights.length > 0) {
+        // Formatear datos
+        const formattedRights = formatAccessRights(globalRights);
+        
+        return { 
+          success: true, 
+          data: formattedRights,
+          debug: {
+            message: "Se encontraron permisos globales (sin grupo asignado)",
+            totalPermisos: allAccessRights ? allAccessRights.length : 0,
+            permisosGlobales: globalRights.length
+          }
+        };
+      }
+      
+      return { 
+        success: true, 
+        data: [],
+        debug: {
+          message: "No se encontraron permisos con los filtros aplicados",
+          totalPermisos: allAccessRights ? allAccessRights.length : 0,
+          domain: domain
+        }
+      };
+    }
+    
+    // Formatear datos
+    const formattedRights = formatAccessRights(accessRights);
+    
+    return { success: true, data: formattedRights };
+  } catch (error) {
+    Logger.log(`Error en getAccessRights: ${error.toString()}`);
     return { 
-      success: !result.error, 
-      message: result.error ? result.error.data.message : 'Grupo asignado correctamente' 
+      success: false, 
+      error: error.toString(),
+      debug: {
+        message: "Error al obtener permisos",
+        error: error.toString()
+      }
     };
-  } catch (error) {
-    console.error('Error al asignar grupo:', error);
-    return { success: false, error: error.toString() };
   }
 }
 
-/**
- * Revoca un grupo de un usuario
- * @param {string} sessionId - ID de sesión de Odoo
- * @param {number} userId - ID del usuario
- * @param {number} groupId - ID del grupo a revocar
- * @returns {Object} Resultado de la operación
- */
-function revokeGroupFromUser(sessionId, userId, groupId) {
-  try {
-    // Primero obtenemos los grupos actuales del usuario
-    const userInfo = callOdooRPC(
-      '/web/dataset/call_kw',
-      'res.users',
-      'read',
-      [[userId]],
-      { fields: ['groups_id'] },
-      sessionId
-    );
+// Función auxiliar para formatear derechos de acceso
+function formatAccessRights(accessRights) {
+  return accessRights.map(right => {
+    // Asegurarse de que model_id y group_id tengan el formato esperado
+    const modelInfo = Array.isArray(right.model_id) ? right.model_id : [0, 'Desconocido (desconocido)'];
+    const groupInfo = right.group_id && Array.isArray(right.group_id) ? right.group_id : [0, 'Sin grupo (global)'];
     
-    if (userInfo.error) {
-      return { success: false, error: userInfo.error };
+    // Extraer nombre del modelo y modelo técnico
+    let modelName = 'Desconocido';
+    let modelTech = 'desconocido';
+    
+    if (modelInfo[1]) {
+      const parts = modelInfo[1].split(' (');
+      if (parts.length > 1) {
+        modelName = parts[0];
+        modelTech = parts[1].replace(')', '');
+      } else {
+        modelName = modelInfo[1];
+      }
     }
     
-    const currentGroups = userInfo.result[0].groups_id;
-    
-    // Verificamos si el grupo está asignado
-    if (!currentGroups.includes(groupId)) {
-      return { success: true, message: 'El usuario no tenía este grupo asignado' };
-    }
-    
-    // Removemos el grupo
-    const newGroups = currentGroups.filter(id => id !== groupId);
-    
-    // Actualizamos el usuario con los nuevos grupos
-    const result = callOdooRPC(
-      '/web/dataset/call_kw',
-      'res.users',
-      'write',
-      [[userId], { groups_id: [[6, 0, newGroups]] }],
-      {},
-      sessionId
-    );
-    
-    return { 
-      success: !result.error, 
-      message: result.error ? result.error.data.message : 'Grupo revocado correctamente' 
+    return {
+      id: right.id,
+      name: right.name,
+      model: modelTech,
+      model_name: modelName,
+      model_id: modelInfo[0],
+      group_id: groupInfo[0],
+      group_name: groupInfo[1],
+      perm_read: right.perm_read,
+      perm_write: right.perm_write,
+      perm_create: right.perm_create,
+      perm_unlink: right.perm_unlink
     };
-  } catch (error) {
-    console.error('Error al revocar grupo:', error);
-    return { success: false, error: error.toString() };
-  }
+  });
 }
 
-/**
- * Registra un evento de auditoría de cambios
- * @param {string} sessionId - ID de sesión de Odoo
- * @param {string} action - Acción realizada (ej: "assign", "revoke")
- * @param {number} userId - ID del usuario afectado
- * @param {number} groupId - ID del grupo afectado
- * @param {string} performedBy - ID o nombre del usuario que realizó la acción
- * @returns {Object} Resultado del registro de auditoría
- */
-function logAuditEvent(sessionId, action, userId, groupId, performedBy) {
+// Guardar derechos de acceso
+function saveAccessRights(config, entityType, entityId, moduleId, accessRights) {
   try {
-    // Creamos un registro de nota en Odoo
-    const result = callOdooRPC(
-      '/web/dataset/call_kw',
-      'mail.message',
-      'create',
-      [{
-        model: 'res.users',
-        res_id: userId,
-        body: `Cambio de permisos: ${action === 'assign' ? 'Asignación' : 'Revocación'} del grupo #${groupId} por ${performedBy}`,
-        message_type: 'comment',
-        subtype_id: 1  // 'Nota' subtype
-      }],
-      {},
-      sessionId
-    );
-    
-    return { success: !result.error };
-  } catch (error) {
-    console.error('Error al registrar auditoría:', error);
-    return { success: false, error: error.toString() };
-  }
-}
-
-/**
- * Actualiza los permisos de un modelo para un usuario o grupo específico
- * @param {Object} data - Datos para la actualización de permisos
- * @returns {Object} Resultado de la operación
- */
-function updateModelPermissions(data) {
-  try {
-    // Verificar que tenemos toda la información necesaria
-    if (!data.sessionId || !data.modelName || !data.permissions) {
-      return { success: false, error: 'Faltan datos necesarios para actualizar los permisos' };
-    }
-    
-    if (!data.userId && !data.groupId) {
-      return { success: false, error: 'Se requiere especificar un usuario o un grupo' };
-    }
-    
-    const { sessionId, modelName, permissions, userId, groupId } = data;
-    
-    // Buscar el ID interno de la tabla ir.model.access para este modelo y grupo/usuario
-    const searchDomain = [['model_id.model', '=', modelName]];
-    
-    if (groupId) {
-      // Si es un grupo, actualizamos directamente el registro de ir.model.access
-      searchDomain.push(['group_id', '=', parseInt(groupId)]);
-      
-      const accessResult = callOdooRPC(
-        '/web/dataset/call_kw',
-        'ir.model.access',
-        'search_read',
-        [],
-        {
-          domain: searchDomain,
-          fields: ['id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink'],
-          context: {}
-        },
-        sessionId
-      );
-      
-      if (accessResult.error) {
-        return { success: false, error: 'Error al buscar registros de acceso: ' + (accessResult.error.message || accessResult.error.toString()) };
+    // Iterar sobre cada derecho y actualizarlo
+    for (const right of accessRights) {
+      if (right.id.toString().startsWith('new_')) {
+        // Crear nuevo derecho
+        callOdooAPI(config, 'ir.model.access', 'create', [{
+          name: `access_${right.model.replace('.', '_')}_${entityType === 'group' ? 'group_' + entityId : 'user_' + entityId}`,
+          model_id: right.model_id,
+          group_id: entityType === 'group' ? parseInt(entityId) : right.group_id,
+          perm_read: right.perm_read,
+          perm_write: right.perm_write,
+          perm_create: right.perm_create,
+          perm_unlink: right.perm_unlink
+        }]);
+      } else {
+        // Actualizar derecho existente
+        callOdooAPI(config, 'ir.model.access', 'write', [
+          parseInt(right.id),
+          {
+            perm_read: right.perm_read,
+            perm_write: right.perm_write,
+            perm_create: right.perm_create,
+            perm_unlink: right.perm_unlink
+          }
+        ]);
       }
-      
-      if (!accessResult.result || accessResult.result.length === 0) {
-        // Si no existe un registro para este modelo y grupo, debemos crearlo
-        return createModelAccess(sessionId, modelName, groupId, permissions);
-      }
-      
-      // Actualizar permisos en los registros encontrados
-      const updatePromises = accessResult.result.map(access => {
-        return callOdooRPC(
-          '/web/dataset/call_kw',
-          'ir.model.access',
-          'write',
-          [[access.id], {
-            perm_read: permissions.perm_read,
-            perm_write: permissions.perm_write,
-            perm_create: permissions.perm_create,
-            perm_unlink: permissions.perm_unlink
-          }],
-          { context: {} },
-          sessionId
-        );
-      });
-      
-      // Verificar que todas las actualizaciones fueron exitosas
-      const updateResults = updatePromises;
-      const allSuccessful = updateResults.every(result => result.result);
-      
-      if (!allSuccessful) {
-        return { success: false, error: 'No se pudieron actualizar todos los permisos' };
-      }
-      
-      return { success: true };
-    } else if (userId) {
-      // Si es un usuario, necesitamos un enfoque diferente
-      // Primero verificamos si el usuario ya tiene una entrada de acceso personalizada
-      // Si no, podríamos necesitar crear una regla de acceso específica para el usuario
-      
-      // Obtener los grupos del usuario
-      const userResult = callOdooRPC(
-        '/web/dataset/call_kw',
-        'res.users',
-        'read',
-        [[parseInt(userId)]],
-        { fields: ['groups_id'], context: {} },
-        sessionId
-      );
-
-      if (userResult.error) {
-        return { success: false, error: 'Error al obtener datos del usuario: ' + (userResult.error.message || userResult.error.toString()) };
-      }
-      
-      if (!userResult.result || userResult.result.length === 0) {
-        return { success: false, error: 'No se pudo encontrar el usuario' };
-      }
-      
-      const userGroups = userResult.result[0].groups_id;
-      
-      // Verificar si alguno de los grupos del usuario ya tiene permisos para este modelo
-      const groupSearchDomain = [
-        ['model_id.model', '=', modelName],
-        ['group_id', 'in', userGroups]
-      ];
-      
-      const groupAccessResult = callOdooRPC(
-        '/web/dataset/call_kw',
-        'ir.model.access',
-        'search_read',
-        [],
-        {
-          domain: groupSearchDomain,
-          fields: ['id', 'group_id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink'],
-          context: {}
-        },
-        sessionId
-      );
-
-      if (groupAccessResult.error) {
-        return { success: false, error: 'Error al buscar accesos de grupo: ' + (groupAccessResult.error.message || groupAccessResult.error.toString()) };
-      }
-      
-      if (!groupAccessResult.result || groupAccessResult.result.length === 0) {
-        // No hay permisos existentes, necesitaríamos crear uno para el grupo principal del usuario
-        // Esto requiere lógica adicional para determinar el grupo adecuado
-        // Por ahora, devolvemos un error o consideramos crear un nuevo grupo de usuario específico.
-        // Para simplificar, si no hay registros de acceso para los grupos del usuario,
-        // no se puede modificar directamente. Se podría considerar crear un nuevo 'ir.model.access'
-        // para un grupo específico del usuario si esa es la lógica deseada.
-        return { success: false, error: 'No se encontraron permisos existentes para modificar para los grupos de este usuario. Considere crear un nuevo acceso para un grupo específico.' };
-      }
-      
-      // Actualizar los permisos en los grupos del usuario
-      // Por simplicidad, actualizamos todos los registros de acceso relacionados
-      const updatePromises = groupAccessResult.result.map(access => {
-        return callOdooRPC(
-          '/web/dataset/call_kw',
-          'ir.model.access',
-          'write',
-          [[access.id], {
-            perm_read: permissions.perm_read,
-            perm_write: permissions.perm_write,
-            perm_create: permissions.perm_create,
-            perm_unlink: permissions.perm_unlink
-          }],
-          { context: {} },
-          sessionId
-        );
-      });
-      
-      // Verificar que todas las actualizaciones fueron exitosas
-      const updateResults = updatePromises;
-      const allSuccessful = updateResults.every(result => result.result);
-      
-      if (!allSuccessful) {
-        return { success: false, error: 'No se pudieron actualizar todos los permisos' };
-      }
-      
-      return { success: true };
-    }
-    
-    return { success: false, error: 'Configuración de permisos no soportada' };
-  } catch (error) {
-    console.error('Error en updateModelPermissions:', error);
-    return { success: false, error: error.toString() };
-  }
-}
-
-/**
- * Crea un nuevo registro de permiso de acceso a modelo
- * @param {string} sessionId - ID de sesión de Odoo
- * @param {string} modelName - Nombre del modelo
- * @param {number} groupId - ID del grupo
- * @param {Object} permissions - Permisos a asignar
- * @returns {Object} Resultado de la operación
- */
-function createModelAccess(sessionId, modelName, groupId, permissions) {
-  try {
-    // Primero necesitamos obtener el ID del modelo
-    const modelResult = callOdooRPC(
-      '/web/dataset/call_kw',
-      'ir.model',
-      'search_read',
-      [],
-      {
-        domain: [['model', '=', modelName]],
-        fields: ['id', 'name'], // 'name' aquí es el nombre descriptivo del modelo
-        context: {}
-      },
-      sessionId
-    );
-    
-    if (modelResult.error) {
-        return { success: false, error: 'Error al buscar el modelo: ' + (modelResult.error.message || modelResult.error.toString()) };
-    }
-    if (!modelResult.result || modelResult.result.length === 0) {
-      return { success: false, error: 'No se pudo encontrar el modelo especificado' };
-    }
-    
-    const modelId = modelResult.result[0].id;
-    
-    // Crear nombre único para el registro de acceso
-    const groupResult = callOdooRPC(
-      '/web/dataset/call_kw',
-      'res.groups',
-      'read',
-      [[parseInt(groupId)]],
-      { fields: ['name'], context: {} },
-      sessionId
-    );
-    
-    if (groupResult.error) {
-        return { success: false, error: 'Error al buscar el grupo: ' + (groupResult.error.message || groupResult.error.toString()) };
-    }
-    if (!groupResult.result || groupResult.result.length === 0) {
-      return { success: false, error: 'No se pudo encontrar el grupo especificado' };
-    }
-    
-    const accessName = `${modelResult.result[0].name} / ${groupResult.result[0].name}`; // Un nombre más descriptivo
-    
-    // Crear el nuevo registro de acceso
-    const createResult = callOdooRPC(
-      '/web/dataset/call_kw',
-      'ir.model.access',
-      'create',
-      [{
-        name: accessName,
-        model_id: modelId,
-        group_id: parseInt(groupId),
-        perm_read: permissions.perm_read || false,
-        perm_write: permissions.perm_write || false,
-        perm_create: permissions.perm_create || false,
-        perm_unlink: permissions.perm_unlink || false
-      }],
-      { context: {} },
-      sessionId
-    );
-    
-    if (createResult.error) {
-        return { success: false, error: 'No se pudo crear el registro de acceso: ' + (createResult.error.message || createResult.error.data.message || createResult.error.toString()) };
-    }
-    if (!createResult.result) {
-      return { success: false, error: 'No se pudo crear el registro de acceso' };
     }
     
     return { success: true };
   } catch (error) {
-    console.error('Error en createModelAccess:', error);
     return { success: false, error: error.toString() };
   }
 }
 
-/**
- * Compara los permisos entre dos usuarios y devuelve las diferencias
- * @param {string} sessionId - ID de sesión de Odoo
- * @param {number} user1Id - ID del primer usuario
- * @param {number} user2Id - ID del segundo usuario
- * @returns {Object} Objeto con las diferencias, permisos comunes y todos los permisos
- */
-function compareUserPermissions(sessionId, user1Id, user2Id) {
+// Modificar la función getRecordRules para mejorar la búsqueda de reglas
+function getRecordRules(config, entityType, entityId, moduleId) {
   try {
-    // Obtenemos los datos de los usuarios
-    const groupsResponse = getGroups(sessionId);
-    const modelAccessResponse = getModelAccess(sessionId);
-    const modulesResponse = getModules(sessionId);
+    // Registrar información de diagnóstico
+    Logger.log(`Buscando reglas de registro para: entityType=${entityType}, entityId=${entityId}, moduleId=${moduleId}`);
     
-    if (!groupsResponse.success || !modelAccessResponse.success || !modulesResponse.success) {
-      throw new Error('Error al obtener datos necesarios para la comparación');
-    }
-    
-    const allGroups = groupsResponse.groups;
-    const allModelAccess = modelAccessResponse.modelAccess;
-    const allModules = modulesResponse.modules;
-    
-    // Obtenemos los usuarios individuales con sus datos detallados
-    const user1Data = getSingleUser(sessionId, user1Id);
-    const user2Data = getSingleUser(sessionId, user2Id);
-    
-    if (!user1Data || !user2Data) {
-      throw new Error('No se pudieron obtener los datos de los usuarios');
-    }
-    
-    // Calculamos los permisos efectivos para cada usuario
-    const user1Perms = getUserEffectivePermissions(user1Data, allGroups, allModelAccess, allModules);
-    const user2Perms = getUserEffectivePermissions(user2Data, allGroups, allModelAccess, allModules);
-    
-    // Realizamos la comparación
-    const comparison = comparePermissions(user1Perms, user2Perms);
-      return {
-      success: true,
-      user1: { 
-        id: user1Id, 
-        name: user1Data.name, 
-        login: user1Data.login, 
-        company_id: user1Data.company_id 
-      },
-      user2: { 
-        id: user2Id, 
-        name: user2Data.name, 
-        login: user2Data.login, 
-        company_id: user2Data.company_id 
-      },
-      comparison: comparison
-    };
-  } catch (error) {
-    console.error('Error al comparar permisos:', error);
-    return {
-      success: false,
-      error: error.message || 'Error desconocido al comparar permisos'
-    };
-  }
-}
-
-/**
- * Obtiene los datos de un usuario específico with todos sus detalles
- * @param {string} sessionId - ID de sesión de Odoo
- * @param {number} userId - ID del usuario
- * @returns {Object} Datos del usuario
- */
-function getSingleUser(sessionId, userId) {
-  const result = callOdooRPC(
-    '/web/dataset/call_kw',
-    'res.users',
-    'search_read',
-    [],    {
-      domain: [['id', '=', userId]],
-      fields: ['id', 'name', 'login', 'groups_id', 'image_128', 'email', 'partner_id', 'create_date', 'company_id'],
-      context: { 'bin_size': true }
-    },
-    sessionId
-  );
-  
-  if (result.result && result.result.length > 0) {
-    return result.result[0];
-  }
-  return null;
-}
-
-/**
- * Calcula los permisos efectivos de un usuario considerando todos sus grupos
- * @param {Object} user - Datos del usuario
- * @param {Array} allGroups - Todos los grupos disponibles
- * @param {Array} allModelAccess - Todos los permisos de acceso a modelos
- * @param {Array} allModules - Todos los módulos disponibles
- * @returns {Object} Permisos efectivos del usuario organizados por modelo
- */
-function getUserEffectivePermissions(user, allGroups, allModelAccess, allModules) {
-  // Recopilamos todos los grupos del usuario, incluidos los heredados
-  const effectiveGroupIds = new Set(user.groups_id);
-  
-  // Añadimos los grupos heredados
-  user.groups_id.forEach(gId => {
-    collectInheritedGroups(gId, effectiveGroupIds, allGroups);
-  });
-  
-  // Obtenemos los permisos relevantes para el usuario
-  const userPermissions = {};
-  
-  allModelAccess.forEach(access => {
-    if (!access.group_id || !effectiveGroupIds.has(access.group_id[0])) return;
-    
-    const modelName = access.model_id ? access.model_id[1] : null;
-    if (!modelName) return;
-    
-    // Determinamos el módulo
-    const moduleName = getModuleFromModel(modelName, allModules);
-    
-    if (!userPermissions[modelName]) {
-      userPermissions[modelName] = {
-        module: moduleName,
-        read: false,
-        write: false,
-        create: false,
-        unlink: false
-      };
-    }
-    
-    // Acumulamos permisos (OR lógico)
-    if (access.perm_read) userPermissions[modelName].read = true;
-    if (access.perm_write) userPermissions[modelName].write = true;
-    if (access.perm_create) userPermissions[modelName].create = true;
-    if (access.perm_unlink) userPermissions[modelName].unlink = true;
-  });
-  
-  return userPermissions;
-}
-
-/**
- * Función auxiliar para recopilar grupos heredados
- * @param {number} groupId - ID del grupo
- * @param {Set} collectedGroups - Conjunto de grupos ya recopilados
- * @param {Array} allGroups - Todos los grupos disponibles
- * @returns {Set} Conjunto actualizado de grupos
- */
-function collectInheritedGroups(groupId, collectedGroups, allGroups) {
-  const group = allGroups.find(g => g.id === groupId);
-  if (!group || !group.implied_ids) return collectedGroups;
-  
-  // Añadimos los grupos implícitos directos
-  group.implied_ids.forEach(impliedId => {
-    if (!collectedGroups.has(impliedId)) {
-      collectedGroups.add(impliedId);
-      // Recursivamente añadimos los grupos heredados de este grupo implícito
-      collectInheritedGroups(impliedId, collectedGroups, allGroups);
-    }
-  });
-  
-  return collectedGroups;
-}
-
-/**
- * Determina el módulo al que pertenece un modelo
- * @param {string} modelName - Nombre del modelo
- * @param {Array} allModules - Todos los módulos disponibles
- * @returns {string} Nombre del módulo
- */
-function getModuleFromModel(modelName, allModules) {
-  // Extraemos el nombre del módulo del nombre del modelo
-  // Por ejemplo, "res.users" pertenece al módulo "base"
-  const parts = modelName.split('.');
-  if (parts.length > 0) {
-    // Buscamos si existe un módulo con este nombre
-    const matchingModule = allModules.find(m => 
-      m.name === parts[0] || 
-      m.name.replace('_', '.') === parts[0]
-    );
-    
-    if (matchingModule) {
-      return matchingModule.shortdesc || matchingModule.name;
-    }
-  }
-  
-  return 'Otros'; // Módulo por defecto si no se puede determinar
-}
-
-/**
- * Compara los permisos entre dos usuarios
- * @param {Object} user1Perms - Permisos del primer usuario
- * @param {Object} user2Perms - Permisos del segundo usuario
- * @returns {Object} Resultado de la comparación
- */
-function comparePermissions(user1Perms, user2Perms) {
-  const differences = [];
-  const commonPerms = {};
-  const allPerms = {};
-  
-  // Unimos todos los modelos de ambos usuarios
-  const allModels = new Set([
-    ...Object.keys(user1Perms),
-    ...Object.keys(user2Perms)
-  ]);
-  
-  // Revisamos cada modelo
-  allModels.forEach(modelName => {
-    const perms1 = user1Perms[modelName] || {
-      module: user2Perms[modelName] ? user2Perms[modelName].module : getModuleFromModel(modelName, []), // Intentar obtener módulo si no existe en perms1
-      read: false,
-      write: false,
-      create: false,
-      unlink: false
-    };
-    
-    const perms2 = user2Perms[modelName] || {
-      module: user1Perms[modelName] ? user1Perms[modelName].module : getModuleFromModel(modelName, []), // Intentar obtener módulo si no existe en perms1
-      read: false,
-      write: false,
-      create: false,
-      unlink: false
-    };
-    
-    // Guardamos todos los permisos
-    allPerms[modelName] = {
-      module: perms1.module, // Asumimos que perms1.module es la fuente de verdad o se calcula consistentemente
-      user1: {
-        read: perms1.read,
-        write: perms1.write,
-        create: perms1.create,
-        unlink: perms1.unlink
-      },
-      user2: {
-        read: perms2.read,
-        write: perms2.write,
-        create: perms2.create,
-        unlink: perms2.unlink
-      }
-    };
-    
-    // Comprobamos diferencias en cada tipo de permiso
-    ['read', 'write', 'create', 'unlink'].forEach(permType => {
-      const val1 = perms1[permType];
-      const val2 = perms2[permType];
-
-      if (val1 !== val2) {
-        differences.push({
-          module: perms1.module, // Usar el módulo de perms1
-          model: modelName,
-          permType: permType,
-          user1Value: val1,
-          user2Value: val2
-        });
-      } else if (val1 === true) { // Si son iguales y true, es un permiso común
-        if (!commonPerms[modelName]) {
-          commonPerms[modelName] = {
-            module: perms1.module, // Usar el módulo de perms1
-            permissions: []
-          };
+    // Obtener modelos del módulo
+    const moduleModels = getModuleModels(config, moduleId);
+    if (!moduleModels.success || !moduleModels.data.length) {
+      Logger.log("No se encontraron modelos para el módulo");
+      return { 
+        success: true, 
+        data: [],
+        debug: {
+          message: "No se encontraron modelos para este módulo",
+          moduleId: moduleId
         }
-        commonPerms[modelName].permissions.push(permType);
-      }
-    });
-  });
-  
-  return {
-    differences,
-    commonPerms,
-    allPerms
-  };
-}
-
-/**
- * Obtiene los permisos de un modelo específico para un usuario o grupo
- * @param {string} sessionId - ID de sesión de Odoo
- * @param {string} modelName - Nombre técnico del modelo
- * @param {number} entityId - ID del usuario o grupo
- * @param {boolean} isGroup - Indica si entityId es un grupo
- * @returns {Object} Permisos del modelo
- */
-function getModelPermissions(sessionId, modelName, entityId, isGroup) {
-  try {
-    // Verificar parámetros
-    if (!sessionId || !modelName || !entityId) {
-      return { success: false, error: 'Faltan parámetros requeridos' };
+      };
     }
     
-    // Primero obtenemos el ID interno del modelo
-    const modelResult = callOdooRPC(
-      '/web/dataset/call_kw',
-      'ir.model',
-      'search_read',
-      [],
-      {
-        domain: [['model', '=', modelName]],
-        fields: ['id', 'name'],
-        context: {}
-      },
-      sessionId
+    const modelNames = moduleModels.data.map(model => model.model);
+    Logger.log(`Modelos encontrados: ${modelNames.join(', ')}`);
+    
+    // Primero buscar todas las reglas para estos modelos sin filtrar por grupo/usuario
+    const allRules = callOdooAPI(config, 'ir.rule', 'search_read', 
+      [[['model_id.model', 'in', modelNames]]],
+      { fields: ['id', 'name', 'model_id', 'domain_force', 'global', 'groups'] }
     );
     
-    if (modelResult.error) {
-      return { success: false, error: 'Error al obtener información del modelo: ' + modelResult.error };
-    }
+    Logger.log(`Total de reglas encontradas para los modelos: ${allRules ? allRules.length : 0}`);
     
-    if (!modelResult.result || modelResult.result.length === 0) {
-      return { success: false, error: 'No se encontró el modelo especificado' };
-    }
+    // Construir dominio para la búsqueda filtrada
+    let domain = [];
     
-    const modelId = modelResult.result[0].id;
-    
-    // Si es un grupo, obtenemos los permisos directamente
-    if (isGroup) {
-      const accessResult = callOdooRPC(
-        '/web/dataset/call_kw',
-        'ir.model.access',
-        'search_read',
-        [],
-        {
-          domain: [
-            ['model_id', '=', modelId],
-            ['group_id', '=', parseInt(entityId)]
-          ],
-          fields: ['id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink'],
-          context: {}
-        },
-        sessionId
+    // Filtrar por entidad
+    if (entityType === 'user') {
+      // Para usuarios, necesitamos obtener sus grupos
+      const user = callOdooAPI(config, 'res.users', 'read', 
+        [entityId],
+        { fields: ['groups_id'] }
       );
       
-      if (accessResult.error) {
-        return { success: false, error: 'Error al obtener permisos: ' + accessResult.error };
-      }
-      
-      // Consolidar permisos (puede haber varios registros para el mismo modelo y grupo)
-      const permissions = {
-        read: false,
-        write: false,
-        create: false,
-        unlink: false
-      };
-      
-      if (accessResult.result && accessResult.result.length > 0) {
-        accessResult.result.forEach(access => {
-          permissions.read = permissions.read || access.perm_read;
-          permissions.write = permissions.write || access.perm_write;
-          permissions.create = permissions.create || access.perm_create;
-          permissions.unlink = permissions.unlink || access.perm_unlink;
-        });
-      }
-      
-      return { success: true, permissions: permissions };
-    } 
-    // Si es un usuario, necesitamos considerar permisos a través de grupos
-    else {
-      // Obtenemos los grupos del usuario
-      const userResult = callOdooRPC(
-        '/web/dataset/call_kw',
-        'res.users',
-        'read',
-        [[parseInt(entityId)]],
-        { fields: ['groups_id'], context: {} },
-        sessionId
-      );
-      
-      if (userResult.error) {
-        return { success: false, error: 'Error al obtener grupos del usuario: ' + userResult.error };
-      }
-      
-      if (!userResult.result || userResult.result.length === 0) {
-        return { success: false, error: 'No se encontró el usuario especificado' };
-      }
-      
-      const userGroups = userResult.result[0].groups_id;
-      
-      // Incluir grupos heredados
-      const allGroups = callOdooRPC(
-        '/web/dataset/call_kw',
-        'res.groups',
-        'search_read',
-        [],
-        { fields: ['id', 'implied_ids'], context: {} },
-        sessionId
-      ).result || [];
-      
-      const effectiveGroupIds = new Set(userGroups);
-      
-      // Añadir grupos heredados recursivamente
-      userGroups.forEach(gId => {
-        const inheritedGroups = getInheritedGroups(gId, allGroups);
-        inheritedGroups.forEach(id => effectiveGroupIds.add(id));
-      });
-      
-      // Obtenemos los permisos del modelo para todos los grupos del usuario
-      const accessResult = callOdooRPC(
-        '/web/dataset/call_kw',
-        'ir.model.access',
-        'search_read',
-        [],
-        {
-          domain: [
-            ['model_id', '=', modelId],
-            ['group_id', 'in', Array.from(effectiveGroupIds)]
-          ],
-          fields: ['id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink', 'group_id'],
-          context: {}
-        },
-        sessionId
-      );
-      
-      if (accessResult.error) {
-        return { success: false, error: 'Error al obtener permisos: ' + accessResult.error };
-      }
-      
-      // Consolidar permisos y marcar si son heredados o directos
-      const permissions = {
-        read: false,
-        write: false,
-        create: false,
-        unlink: false,
-        read_inherited: false,
-        write_inherited: false,
-        create_inherited: false,
-        unlink_inherited: false
-      };
-      
-      if (accessResult.result && accessResult.result.length > 0) {
-        // Primero procesamos los grupos directos
-        const directAccess = accessResult.result.filter(
-          access => userGroups.includes(access.group_id[0])
-        );
-        
-        directAccess.forEach(access => {
-          if (access.perm_read) permissions.read = true;
-          if (access.perm_write) permissions.write = true;
-          if (access.perm_create) permissions.create = true;
-          if (access.perm_unlink) permissions.unlink = true;
-        });
-        
-        // Luego procesamos los grupos heredados
-        const inheritedAccess = accessResult.result.filter(
-          access => !userGroups.includes(access.group_id[0])
-        );
-        
-        inheritedAccess.forEach(access => {
-          // Solo marcar como heredado si no ya está establecido directamente
-          if (access.perm_read && !permissions.read) {
-            permissions.read = true;
-            permissions.read_inherited = true;
-          }
-          if (access.perm_write && !permissions.write) {
-            permissions.write = true;
-            permissions.write_inherited = true;
-          }
-          if (access.perm_create && !permissions.create) {
-            permissions.create = true;
-            permissions.create_inherited = true;
-          }
-          if (access.perm_unlink && !permissions.unlink) {
-            permissions.unlink = true;
-            permissions.unlink_inherited = true;
-          }
-        });
-      }
-      
-      return { success: true, permissions: permissions };
-    }
-  } catch (error) {
-    console.error('Error en getModelPermissions:', error);
-    return { success: false, error: error.toString() };
-  }
-}
-
-/**
- * Obtiene permisos detallados para análisis y exportación
- * @param {string} sessionId - ID de sesión de Odoo
- * @param {number} userId - ID del usuario o grupo
- * @param {boolean} isGroup - Indica si es un grupo
- * @returns {Object} Objeto con resultado y lista de permisos detallados
- */
-function getDetailedPermissions(sessionId, userId, isGroup) {
-  try {
-    // Obtener todos los módulos
-    const modulesResult = getModules(sessionId);
-    if (!modulesResult.success) {
-      return { success: false, error: 'Error al obtener módulos: ' + modulesResult.error };
-    }
-    
-    // Obtener todos los modelos
-    const modelsResult = getModels(sessionId);
-    if (!modelsResult.success) {
-      return { success: false, error: 'Error al obtener modelos: ' + modelsResult.error };
-    }
-    
-    // Obtener grupos del usuario
-    let userGroups = [];
-    if (isGroup) {
-      // Si es un grupo, obtener sus grupos implícitos
-      const groupsResult = getGroups(sessionId);
-      if (!groupsResult.success) {
-        return { success: false, error: 'Error al obtener grupos: ' + groupsResult.error };
-      }
-      
-      const group = groupsResult.groups.find(g => g.id === userId);
-      if (!group) {
-        return { success: false, error: 'Grupo no encontrado' };
-      }
-      
-      userGroups = [userId];
-      
-      // Añadir grupos implícitos (heredados)
-      if (group.implied_ids && group.implied_ids.length > 0) {
-        userGroups = userGroups.concat(getInheritedGroups(userId, groupsResult.groups));
+      if (!user || !user.length || !user[0].groups_id || !user[0].groups_id.length) {
+        Logger.log("Usuario no tiene grupos asignados");
+        // Solo reglas globales
+        domain.push(['global', '=', true]);
+      } else {
+        Logger.log(`Grupos del usuario: ${user[0].groups_id.join(', ')}`);
+        // Reglas globales o reglas para los grupos del usuario
+        domain.push('|', ['global', '=', true], ['groups', 'in', user[0].groups_id]);
       }
     } else {
-      // Si es un usuario, obtener sus grupos asignados
-      const userResult = getUserDetails(sessionId, userId);
-      if (!userResult.success) {
-        return { success: false, error: 'Error al obtener usuario: ' + userResult.error };
-      }
-      
-      userGroups = userResult.user.groups_id;
+      // Para grupos, reglas globales o reglas específicas del grupo
+      domain.push('|', ['global', '=', true], ['groups', 'in', [parseInt(entityId)]]);
     }
     
-    // Mapear módulos por ID
-    const modulesById = {};
-    modulesResult.modules.forEach(module => {
-      modulesById[module.id] = module;
-    });
+    // Añadir filtro por modelo
+    domain.push(['model_id.model', 'in', modelNames]);
     
-    // Crear mapa de modelos por nombre técnico
-    const modelsByName = {};
-    modelsResult.models.forEach(model => {
-      modelsByName[model.model] = model;
-    });
+    Logger.log(`Dominio de búsqueda: ${JSON.stringify(domain)}`);
     
-    // Obtener permisos de acceso para todos los modelos
-    const result = fetchFromOdoo(sessionId, 'ir.model.access', 'search_read', {
-      domain: [],
-      fields: ['id', 'name', 'model_id', 'group_id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink']
-    });
-    
-    if (result.error) {
-      return { success: false, error: 'Error al obtener permisos: ' + result.error };
-    }
-    
-    // Filtrar permisos relevantes para los grupos del usuario
-    const allAccess = result.result;
-    const relevantAccess = allAccess.filter(access => 
-      // Incluir registros sin grupo (todos los usuarios) o registros para los grupos del usuario
-      !access.group_id || userGroups.includes(access.group_id[0])
+    // Obtener reglas de registro
+    const recordRules = callOdooAPI(config, 'ir.rule', 'search_read', 
+      [domain],
+      { fields: ['id', 'name', 'model_id', 'domain_force', 'global', 'groups'] }
     );
     
-    // Organizar permisos por modelo
-    const permissionsByModel = {};
+    Logger.log(`Reglas encontradas con filtros: ${recordRules ? recordRules.length : 0}`);
     
-    relevantAccess.forEach(access => {
-      const modelId = access.model_id[0];
-      const modelName = access.model_id[1];
-      const modelInfo = modelsByName[modelName];
+    // Si no hay resultados, intentar una búsqueda más amplia
+    if (!recordRules || recordRules.length === 0) {
+      // Intentar buscar reglas globales
+      const globalRules = callOdooAPI(config, 'ir.rule', 'search_read', 
+        [[['model_id.model', 'in', modelNames], ['global', '=', true]]],
+        { fields: ['id', 'name', 'model_id', 'domain_force', 'global', 'groups'] }
+      );
       
-      if (!modelInfo) {
-        return; // Omitir si no encontramos información del modelo
-      }
+      Logger.log(`Reglas globales encontradas: ${globalRules ? globalRules.length : 0}`);
       
-      const moduleName = modelInfo.modules && modelInfo.modules.length > 0 
-        ? modulesById[modelInfo.modules[0]].name 
-        : 'Base';
-      
-      if (!permissionsByModel[modelName]) {
-        permissionsByModel[modelName] = {
-          model_name: modelName,
-          model_id: modelId,
-          module_name: moduleName,
-          read: false,
-          write: false,
-          create: false,
-          unlink: false,
-          read_inherited: false,
-          write_inherited: false,
-          create_inherited: false,
-          unlink_inherited: false
+      if (globalRules && globalRules.length > 0) {
+        // Formatear datos
+        const formattedRules = formatRecordRules(globalRules);
+        
+        return { 
+          success: true, 
+          data: formattedRules,
+          debug: {
+            message: "Se encontraron reglas globales",
+            totalReglas: allRules ? allRules.length : 0,
+            reglasGlobales: globalRules.length
+          }
         };
       }
       
-      // Verificar si el permiso viene de un grupo directo o heredado
-      const isDirect = isGroup 
-        ? access.group_id && access.group_id[0] === userId 
-        : access.group_id && userGroups.includes(access.group_id[0]);
+      return { 
+        success: true, 
+        data: [],
+        debug: {
+          message: "No se encontraron reglas con los filtros aplicados",
+          totalReglas: allRules ? allRules.length : 0,
+          domain: domain
+        }
+      };
+    }
+    
+    // Formatear datos
+    const formattedRules = formatRecordRules(recordRules);
+    
+    return { success: true, data: formattedRules };
+  } catch (error) {
+    Logger.log(`Error en getRecordRules: ${error.toString()}`);
+    return { 
+      success: false, 
+      error: error.toString(),
+      debug: {
+        message: "Error al obtener reglas de registro",
+        error: error.toString()
+      }
+    };
+  }
+}
+
+// Función auxiliar para formatear reglas de registro
+function formatRecordRules(recordRules) {
+  return recordRules.map(rule => {
+    // Asegurarse de que model_id tenga el formato esperado
+    const modelInfo = Array.isArray(rule.model_id) ? rule.model_id : [0, 'Desconocido (desconocido)'];
+    
+    // Extraer nombre del modelo y modelo técnico
+    let modelName = 'Desconocido';
+    let modelTech = 'desconocido';
+    
+    if (modelInfo[1]) {
+      const parts = modelInfo[1].split(' (');
+      if (parts.length > 1) {
+        modelName = parts[0];
+        modelTech = parts[1].replace(')', '');
+      } else {
+        modelName = modelInfo[1];
+      }
+    }
+    
+    return {
+      id: rule.id,
+      name: rule.name,
+      model: modelTech,
+      model_name: modelName,
+      model_id: modelInfo[0],
+      domain_force: rule.domain_force,
+      global: rule.global,
+      groups: rule.groups
+    };
+  });
+}
+
+// Guardar reglas de registro
+function saveRecordRules(config, entityType, entityId, moduleId, recordRules) {
+  try {
+    // Iterar sobre cada regla y actualizarla
+    for (const rule of recordRules) {
+      if (rule.id.toString().startsWith('new_')) {
+        // Crear nueva regla
+        const newRule = {
+          name: rule.name,
+          model_id: rule.model_id,
+          domain_force: rule.domain_force,
+          global: rule.global
+        };
+        
+        if (!rule.global && entityType === 'group') {
+          newRule.groups = [[4, parseInt(entityId)]];
+        }
+        
+        callOdooAPI(config, 'ir.rule', 'create', [newRule]);
+      } else {
+        // Actualizar regla existente
+        const updateData = {
+          name: rule.name,
+          domain_force: rule.domain_force,
+          global: rule.global
+        };
+        
+        callOdooAPI(config, 'ir.rule', 'write', [
+          parseInt(rule.id),
+          updateData
+        ]);
+        
+        // Actualizar grupos si es necesario
+        if (!rule.global && entityType === 'group') {
+          // Primero limpiamos los grupos existentes
+          const currentRule = callOdooAPI(config, 'ir.rule', 'read', 
+            [parseInt(rule.id)],
+            { fields: ['groups'] }
+          );
+          
+          if (currentRule && currentRule.length && currentRule[0].groups) {
+            for (const groupId of currentRule[0].groups) {
+              callOdooAPI(config, 'ir.rule', 'write', [
+                parseInt(rule.id),
+                { groups: [[3, groupId]] }
+              ]);
+            }
+          }
+          
+          // Añadimos el grupo actual
+          callOdooAPI(config, 'ir.rule', 'write', [
+            parseInt(rule.id),
+            { groups: [[4, parseInt(entityId)]] }
+          ]);
+        }
+      }
+    }
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Modificar la función getMenuAccess para mejorar la búsqueda de menús
+function getMenuAccess(config, entityType, entityId, moduleId) {
+  try {
+    // Registrar información de diagnóstico
+    Logger.log(`Buscando acceso a menús para: entityType=${entityType}, entityId=${entityId}, moduleId=${moduleId}`);
+    
+    // Obtener información del módulo
+    const module = callOdooAPI(config, 'ir.module.module', 'read', 
+      [moduleId],
+      { fields: ['name'] }
+    );
+    
+    if (!module || !module.length) {
+      Logger.log("Módulo no encontrado");
+      return { 
+        success: false, 
+        error: 'Módulo no encontrado',
+        debug: {
+          message: "No se encontró el módulo especificado",
+          moduleId: moduleId
+        }
+      };
+    }
+    
+    const moduleName = module[0].name;
+    Logger.log(`Nombre técnico del módulo: ${moduleName}`);
+    
+    // Primero buscar todos los menús sin filtrar
+    const allMenus = callOdooAPI(config, 'ir.ui.menu', 'search_read', 
+      [[]],
+      { fields: ['id', 'name', 'parent_id', 'groups_id'] }
+    );
+    
+    Logger.log(`Total de menús en el sistema: ${allMenus ? allMenus.length : 0}`);
+    
+    // Buscar menús relacionados con el módulo
+    const menuIds = callOdooAPI(config, 'ir.model.data', 'search_read', 
+      [[['module', '=', moduleName], ['model', '=', 'ir.ui.menu']]],
+      { fields: ['res_id'] }
+    );
+    
+    if (!menuIds || !menuIds.length) {
+      // Intentar una búsqueda más amplia para módulos que pueden no tener datos ir.model.data
+      Logger.log("No se encontraron menús directamente asociados al módulo, intentando búsqueda alternativa");
       
-      // Actualizar permisos, dando prioridad a los directos sobre los heredados
-      if (access.perm_read) {
-        permissionsByModel[modelName].read = true;
-        if (!isDirect && !permissionsByModel[modelName].read_inherited) {
-          permissionsByModel[modelName].read_inherited = true;
+      // Buscar menús que puedan estar relacionados con los modelos del módulo
+      const moduleModels = getModuleModels(config, moduleId);
+      if (moduleModels.success && moduleModels.data.length > 0) {
+        const modelNames = moduleModels.data.map(model => model.model);
+        
+        // Buscar acciones de ventana para estos modelos
+        const actions = callOdooAPI(config, 'ir.actions.act_window', 'search_read', 
+          [[['res_model', 'in', modelNames]]],
+          { fields: ['id', 'name'] }
+        );
+        
+        if (actions && actions.length > 0) {
+          const actionIds = actions.map(action => action.id);
+          
+          // Buscar menús que usen estas acciones
+          const relatedMenus = callOdooAPI(config, 'ir.ui.menu', 'search_read', 
+            [[['action', 'in', actionIds]]],
+            { fields: ['id', 'name', 'parent_id', 'groups_id'] }
+          );
+          
+          if (relatedMenus && relatedMenus.length > 0) {
+            Logger.log(`Se encontraron ${relatedMenus.length} menús relacionados con los modelos del módulo`);
+            
+            // Construir árbol de menús
+            const menuTree = buildMenuTree(relatedMenus);
+            
+            // Determinar acceso
+            let groupIds = [];
+            if (entityType === 'user') {
+              const user = callOdooAPI(config, 'res.users', 'read', 
+                [entityId],
+                { fields: ['groups_id'] }
+              );
+              
+              if (user && user.length && user[0].groups_id) {
+                groupIds = user[0].groups_id;
+              }
+            } else {
+              groupIds = [parseInt(entityId)];
+            }
+            
+            // Formatear datos con acceso
+            const formattedMenus = flattenMenuTree(menuTree, groupIds);
+            
+            return { 
+              success: true, 
+              data: formattedMenus,
+              debug: {
+                message: "Se encontraron menús relacionados con los modelos del módulo",
+                totalMenusModulo: relatedMenus.length
+              }
+            };
+          }
         }
       }
       
-      if (access.perm_write) {
-        permissionsByModel[modelName].write = true;
-        if (!isDirect && !permissionsByModel[modelName].write_inherited) {
-          permissionsByModel[modelName].write_inherited = true;
+      Logger.log("No se encontraron menús para este módulo");
+      return { 
+        success: true, 
+        data: [],
+        debug: {
+          message: "No se encontraron menús para este módulo",
+          moduleName: moduleName,
+          totalMenus: allMenus ? allMenus.length : 0
         }
-      }
+      };
+    }
+    
+    const ids = menuIds.map(item => item.res_id);
+    Logger.log(`Menús encontrados para el módulo: ${ids.join(', ')}`);
+    
+    // Obtener información de los menús
+    const menus = callOdooAPI(config, 'ir.ui.menu', 'read', 
+      [ids],
+      { fields: ['id', 'name', 'parent_id', 'groups_id'] }
+    );
+    
+    if (!menus || !menus.length) {
+      Logger.log("No se pudieron obtener detalles de los menús");
+      return { 
+        success: true, 
+        data: [],
+        debug: {
+          message: "No se pudieron obtener detalles de los menús",
+          menuIds: ids
+        }
+      };
+    }
+    
+    // Construir árbol de menús
+    const menuTree = buildMenuTree(menus);
+    
+    // Determinar acceso
+    let groupIds = [];
+    if (entityType === 'user') {
+      const user = callOdooAPI(config, 'res.users', 'read', 
+        [entityId],
+        { fields: ['groups_id'] }
+      );
       
-      if (access.perm_create) {
-        permissionsByModel[modelName].create = true;
-        if (!isDirect && !permissionsByModel[modelName].create_inherited) {
-          permissionsByModel[modelName].create_inherited = true;
-        }
+      if (user && user.length && user[0].groups_id) {
+        groupIds = user[0].groups_id;
+        Logger.log(`Grupos del usuario: ${groupIds.join(', ')}`);
+      } else {
+        Logger.log("Usuario no tiene grupos asignados");
       }
-      
-      if (access.perm_unlink) {
-        permissionsByModel[modelName].unlink = true;
-        if (!isDirect && !permissionsByModel[modelName].unlink_inherited) {
-          permissionsByModel[modelName].unlink_inherited = true;
-        }
+    } else {
+      groupIds = [parseInt(entityId)];
+      Logger.log(`Grupo seleccionado: ${entityId}`);
+    }
+    
+    // Formatear datos con acceso
+    const formattedMenus = flattenMenuTree(menuTree, groupIds);
+    
+    Logger.log(`Menús formateados: ${formattedMenus.length}`);
+    
+    return { 
+      success: true, 
+      data: formattedMenus,
+      debug: {
+        message: formattedMenus.length > 0 ? 
+          "Se encontraron menús para este módulo" : 
+          "No se encontraron menús accesibles para esta entidad",
+        totalMenusModulo: menus.length,
+        groupIds: groupIds
       }
+    };
+  } catch (error) {
+    Logger.log(`Error en getMenuAccess: ${error.toString()}`);
+    return { 
+      success: false, 
+      error: error.toString(),
+      debug: {
+        message: "Error al obtener acceso a menús",
+        error: error.toString()
+      }
+    };
+  }
+}
+
+// Construir árbol de menús
+function buildMenuTree(menus) {
+  const menuMap = {};
+  const rootMenus = [];
+  
+  // Crear mapa de menús
+  menus.forEach(menu => {
+    menuMap[menu.id] = {
+      ...menu,
+      children: []
+    };
+  });
+  
+  // Construir árbol
+  menus.forEach(menu => {
+    if (menu.parent_id && menuMap[menu.parent_id[0]]) {
+      menuMap[menu.parent_id[0]].children.push(menuMap[menu.id]);
+    } else {
+      rootMenus.push(menuMap[menu.id]);
+    }
+  });
+  
+  return rootMenus;
+}
+
+// Aplanar árbol de menús
+function flattenMenuTree(menuTree, groupIds, level = 0, result = []) {
+  menuTree.forEach(menu => {
+    // Verificar acceso
+    const hasAccess = menu.groups_id.length === 0 || 
+                      menu.groups_id.some(groupId => groupIds.includes(groupId));
+    
+    result.push({
+      id: menu.id,
+      name: menu.name,
+      level: level,
+      access: hasAccess,
+      groups_id: menu.groups_id
     });
     
-    // Convertir a array para la respuesta
-    const permissions = Object.values(permissionsByModel);
+    if (menu.children && menu.children.length) {
+      flattenMenuTree(menu.children, groupIds, level + 1, result);
+    }
+  });
+  
+  return result;
+}
+
+// Guardar acceso a menús
+function saveMenuAccess(config, entityType, entityId, moduleId, menuAccess) {
+  try {
+    // Solo podemos modificar acceso a nivel de grupo
+    if (entityType !== 'group') {
+      return { success: false, error: 'Solo se puede modificar acceso a menús para grupos' };
+    }
     
-    return { success: true, permissions };
+    const groupId = parseInt(entityId);
+    
+    // Iterar sobre cada menú y actualizar su acceso
+    for (const menu of menuAccess) {
+      const menuId = menu.id;
+      
+      // Obtener grupos actuales
+      const currentMenu = callOdooAPI(config, 'ir.ui.menu', 'read', 
+        [menuId],
+        { fields: ['groups_id'] }
+      );
+      
+      if (!currentMenu || !currentMenu.length) continue;
+      
+      const currentGroups = currentMenu[0].groups_id || [];
+      
+      if (menu.access) {
+        // Añadir grupo si no está ya
+        if (!currentGroups.includes(groupId)) {
+          callOdooAPI(config, 'ir.ui.menu', 'write', [
+            menuId,
+            { groups_id: [[4, groupId]] }
+          ]);
+        }
+      } else {
+        // Quitar grupo si está
+        if (currentGroups.includes(groupId)) {
+          callOdooAPI(config, 'ir.ui.menu', 'write', [
+            menuId,
+            { groups_id: [[3, groupId]] }
+          ]);
+        }
+      }
+    }
+    
+    return { success: true };
   } catch (error) {
-    console.error('Error en getDetailedPermissions:', error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Modificar la función callOdooAPI para mejorar el manejo de errores
+
+// Función para llamar a la API de Odoo
+function callOdooAPI(config, model, method, args, kwargs = {}) {
+  // Validar configuración
+  if (!config || !config.url || !config.db || !config.username || !config.password) {
+    throw new Error('Configuración de Odoo incompleta');
+  }
+  
+  // Preparar URL
+  let url = config.url;
+  if (!url.endsWith('/')) {
+    url += '/';
+  }
+  url += 'xmlrpc/2/';
+  
+  try {
+    // Autenticar
+    const commonUrl = url + 'common';
+    const commonPayload = XmlRpc.createCall('authenticate', [
+      config.db,
+      config.username,
+      config.password,
+      {}
+    ]);
+    
+    const commonResponse = UrlFetchApp.fetch(commonUrl, {
+      method: 'post',
+      contentType: 'text/xml',
+      payload: commonPayload,
+      muteHttpExceptions: true
+    });
+    
+    const statusCode = commonResponse.getResponseCode();
+    if (statusCode !== 200) {
+      throw new Error('Error HTTP en autenticación: ' + statusCode + ' - ' + commonResponse.getContentText());
+    }
+    
+    const uid = XmlRpc.parseResponse(commonResponse.getContentText());
+    
+    if (!uid) {
+      throw new Error('Autenticación fallida: UID nulo');
+    }
+    
+    // Llamar al método
+    const objectUrl = url + 'object';
+    const objectPayload = XmlRpc.createCall('execute_kw', [
+      config.db,
+      uid,
+      config.password,
+      model,
+      method,
+      args,
+      kwargs
+    ]);
+    
+    const objectResponse = UrlFetchApp.fetch(objectUrl, {
+      method: 'post',
+      contentType: 'text/xml',
+      payload: objectPayload,
+      muteHttpExceptions: true
+    });
+    
+    const objectStatusCode = objectResponse.getResponseCode();
+    if (objectStatusCode !== 200) {
+      throw new Error('Error HTTP en llamada a método: ' + objectStatusCode + ' - ' + objectResponse.getContentText());
+    }
+    
+    return XmlRpc.parseResponse(objectResponse.getContentText());
+  } catch (error) {
+    Logger.log('Error en callOdooAPI: ' + error.toString());
+    throw error;
+  }
+}
+
+// Reemplazar completamente el objeto XmlRpc con esta implementación mejorada:
+
+// Objeto para manejar XML-RPC
+const XmlRpc = {
+  createCall: function(method, params) {
+    let xml = '<?xml version="1.0"?>\n';
+    xml += '<methodCall>\n';
+    xml += '  <methodName>' + method + '</methodName>\n';
+    xml += '  <params>\n';
+    
+    for (const param of params) {
+      xml += '    <param>\n';
+      xml += this.valueToXml(param, 4);
+      xml += '    </param>\n';
+    }
+    
+    xml += '  </params>\n';
+    xml += '</methodCall>';
+    
+    return xml;
+  },
+  
+  valueToXml: function(value, indent) {
+    const spaces = ' '.repeat(indent);
+    let xml = spaces + '<value>';
+    
+    if (value === null || value === undefined) {
+      xml += '<nil/>';
+    } else if (typeof value === 'boolean') {
+      xml += '<boolean>' + (value ? '1' : '0') + '</boolean>';
+    } else if (typeof value === 'number') {
+      if (Number.isInteger(value)) {
+        xml += '<int>' + value + '</int>';
+      } else {
+        xml += '<double>' + value + '</double>';
+      }
+    } else if (typeof value === 'string') {
+      xml += '<string>' + this.escapeXml(value) + '</string>';
+    } else if (Array.isArray(value)) {
+      xml += '\n' + spaces + '  <array>\n';
+      xml += spaces + '    <data>\n';
+      
+      for (const item of value) {
+        xml += this.valueToXml(item, indent + 6) + '\n';
+      }
+      
+      xml += spaces + '    </data>\n';
+      xml += spaces + '  </array>\n';
+      xml += spaces;
+    } else if (typeof value === 'object') {
+      xml += '\n' + spaces + '  <struct>\n';
+      
+      for (const key in value) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          xml += spaces + '    <member>\n';
+          xml += spaces + '      <name>' + this.escapeXml(key) + '</name>\n';
+          xml += this.valueToXml(value[key], indent + 6) + '\n';
+          xml += spaces + '    </member>\n';
+        }
+      }
+      
+      xml += spaces + '  </struct>\n';
+      xml += spaces;
+    }
+    
+    xml += '</value>';
+    return xml;
+  },
+  
+  escapeXml: function(text) {
+    if (text === null || text === undefined) {
+      return '';
+    }
+    return text.toString()
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  },
+  
+  parseResponse: function(xml) {
+    try {
+      // Parsear respuesta XML-RPC
+      const document = XmlService.parse(xml);
+      const root = document.getRootElement();
+      
+      // Verificar si hay un error
+      const fault = root.getChild('fault');
+      if (fault) {
+        const value = fault.getChild('value');
+        const struct = value.getChild('struct');
+        const members = struct.getChildren('member');
+        
+        let faultString = '';
+        for (const member of members) {
+          if (member.getChild('name').getText() === 'faultString') {
+            faultString = member.getChild('value').getChild('string').getText();
+            break;
+          }
+        }
+        
+        throw new Error(faultString);
+      }
+      
+      // Obtener valor de respuesta
+      const params = root.getChild('params');
+      if (!params) return null;
+      
+      const param = params.getChild('param');
+      if (!param) return null;
+      
+      const value = param.getChild('value');
+      if (!value) return null;
+      
+      return this.parseValue(value);
+    } catch (e) {
+      Logger.log('Error al parsear respuesta XML: ' + e.toString());
+      Logger.log('XML recibido: ' + xml);
+      throw new Error('Error al procesar la respuesta de Odoo: ' + e.toString());
+    }
+  },
+  
+  parseValue: function(valueElement) {
+    // Parsear diferentes tipos de valores
+    const children = valueElement.getChildren();
+    if (children.length === 0) {
+      return valueElement.getText();
+    }
+    
+    const type = children[0].getName();
+    
+    switch (type) {
+      case 'nil':
+        return null;
+      case 'boolean':
+        return children[0].getText() === '1';
+      case 'int':
+      case 'i4':
+        return parseInt(children[0].getText());
+      case 'double':
+        return parseFloat(children[0].getText());
+      case 'string':
+        return children[0].getText();
+      case 'array':
+        const data = children[0].getChild('data');
+        const values = data.getChildren('value');
+        return values.map(value => this.parseValue(value));
+      case 'struct':
+        const members = children[0].getChildren('member');
+        const result = {};
+        
+        for (const member of members) {
+          const name = member.getChild('name').getText();
+          const value = this.parseValue(member.getChild('value'));
+          result[name] = value;
+        }
+        
+        return result;
+      default:
+        return valueElement.getText();
+    }
+  }
+};
+
+// Añadir nuevas funciones para obtener todos los permisos, reglas y menús de un módulo
+
+// Función para obtener todos los permisos de un módulo sin filtrar por usuario/grupo
+function getAllModuleAccessRights(config, moduleId) {
+  try {
+    // Obtener modelos del módulo
+    const moduleModels = getModuleModels(config, moduleId);
+    if (!moduleModels.success || !moduleModels.data.length) {
+      return { success: true, data: [] };
+    }
+    
+    const modelIds = moduleModels.data.map(model => model.id);
+    
+    // Buscar todos los permisos para estos modelos
+    const accessRights = callOdooAPI(config, 'ir.model.access', 'search_read', 
+      [[['model_id', 'in', modelIds]]],
+      { fields: ['id', 'name', 'model_id', 'group_id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink'] }
+    );
+    
+    // Formatear datos
+    const formattedRights = accessRights.map(right => {
+      // Asegurarse de que model_id y group_id tengan el formato esperado
+      const modelInfo = Array.isArray(right.model_id) ? right.model_id : [0, 'Desconocido (desconocido)'];
+      const groupInfo = right.group_id && Array.isArray(right.group_id) ? right.group_id : [0, 'Sin grupo (global)'];
+      
+      // Extraer nombre del modelo y modelo técnico
+      let modelName = 'Desconocido';
+      let modelTech = 'desconocido';
+      
+      if (modelInfo[1]) {
+        const parts = modelInfo[1].split(' (');
+        if (parts.length > 1) {
+          modelName = parts[0];
+          modelTech = parts[1].replace(')', '');
+        } else {
+          modelName = modelInfo[1];
+        }
+      }
+      
+      return {
+        id: right.id,
+        name: right.name,
+        model: modelTech,
+        model_name: modelName,
+        model_id: modelInfo[0],
+        group_id: groupInfo[0],
+        group_name: groupInfo[1],
+        perm_read: right.perm_read,
+        perm_write: right.perm_write,
+        perm_create: right.perm_create,
+        perm_unlink: right.perm_unlink
+      };
+    });
+    
+    return { success: true, data: formattedRights };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Función para obtener todas las reglas de un módulo sin filtrar por usuario/grupo
+function getAllModuleRecordRules(config, moduleId) {
+  try {
+    // Obtener modelos del módulo
+    const moduleModels = getModuleModels(config, moduleId);
+    if (!moduleModels.success || !moduleModels.data.length) {
+      return { success: true, data: [] };
+    }
+    
+    const modelNames = moduleModels.data.map(model => model.model);
+    
+    // Buscar todas las reglas para estos modelos
+    const recordRules = callOdooAPI(config, 'ir.rule', 'search_read', 
+      [[['model_id.model', 'in', modelNames]]],
+      { fields: ['id', 'name', 'model_id', 'domain_force', 'global', 'groups'] }
+    );
+    
+    // Formatear datos
+    const formattedRules = recordRules.map(rule => {
+      // Asegurarse de que model_id tenga el formato esperado
+      const modelInfo = Array.isArray(rule.model_id) ? rule.model_id : [0, 'Desconocido (desconocido)'];
+      
+      // Extraer nombre del modelo y modelo técnico
+      let modelName = 'Desconocido';
+      let modelTech = 'desconocido';
+      
+      if (modelInfo[1]) {
+        const parts = modelInfo[1].split(' (');
+        if (parts.length > 1) {
+          modelName = parts[0];
+          modelTech = parts[1].replace(')', '');
+        } else {
+          modelName = modelInfo[1];
+        }
+      }
+      
+      return {
+        id: rule.id,
+        name: rule.name,
+        model: modelTech,
+        model_name: modelName,
+        model_id: modelInfo[0],
+        domain_force: rule.domain_force,
+        global: rule.global,
+        groups: rule.groups
+      };
+    });
+    
+    return { success: true, data: formattedRules };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Función para obtener todos los menús de un módulo sin filtrar por acceso
+function getAllModuleMenus(config, moduleId) {
+  try {
+    // Obtener información del módulo
+    const module = callOdooAPI(config, 'ir.module.module', 'read', 
+      [moduleId],
+      { fields: ['name'] }
+    );
+    
+    if (!module || !module.length) {
+      return { success: false, error: 'Módulo no encontrado' };
+    }
+    
+    const moduleName = module[0].name;
+    
+    // Buscar menús relacionados con el módulo
+    const menuIds = callOdooAPI(config, 'ir.model.data', 'search_read', 
+      [[['module', '=', moduleName], ['model', '=', 'ir.ui.menu']]],
+      { fields: ['res_id'] }
+    );
+    
+    if (!menuIds || !menuIds.length) {
+      return { success: true, data: [] };
+    }
+    
+    const ids = menuIds.map(item => item.res_id);
+    
+    // Obtener información de los menús
+    const menus = callOdooAPI(config, 'ir.ui.menu', 'read', 
+      [ids],
+      { fields: ['id', 'name', 'parent_id', 'groups_id'] }
+    );
+    
+    if (!menus || !menus.length) {
+      return { success: true, data: [] };
+    }
+    
+    // Construir árbol de menús
+    const menuTree = buildMenuTree(menus);
+    
+    // Formatear datos sin filtrar por acceso
+    const formattedMenus = flattenMenuTreeWithoutAccess(menuTree);
+    
+    return { success: true, data: formattedMenus };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Función para aplanar árbol de menús sin filtrar por acceso
+function flattenMenuTreeWithoutAccess(menuTree, level = 0, result = []) {
+  menuTree.forEach(menu => {
+    result.push({
+      id: menu.id,
+      name: menu.name,
+      level: level,
+      groups_id: menu.groups_id
+    });
+    
+    if (menu.children && menu.children.length) {
+      flattenMenuTreeWithoutAccess(menu.children, level + 1, result);
+    }
+  });
+  
+  return result;
+}
+
+// Añadir nuevas funciones para obtener permisos y reglas de un grupo específico
+
+// Función para obtener los permisos de acceso de un grupo
+function getGroupAccessRights(config, groupId) {
+  try {
+    // Obtener todos los módulos instalados
+    const installedModules = callOdooAPI(config, 'ir.module.module', 'search_read', 
+      [[['state', '=', 'installed']]],
+      { fields: ['id', 'name', 'shortdesc'] }
+    );
+    
+    if (!installedModules || installedModules.length === 0) {
+      return { success: true, data: [] };
+    }
+    
+    // Inicializar array para almacenar todos los derechos
+    let allRights = [];
+    
+    // Para cada módulo, obtener sus modelos y luego los permisos asociados
+    for (const module of installedModules) {
+      try {
+        // Obtener modelos del módulo
+        const moduleModels = getModuleModels(config, module.id);
+        
+        if (moduleModels.success && moduleModels.data && moduleModels.data.length > 0) {
+          const modelIds = moduleModels.data.map(model => model.id);
+          
+          // Buscar permisos para estos modelos y este grupo
+          const accessRights = callOdooAPI(config, 'ir.model.access', 'search_read', 
+            [[['model_id', 'in', modelIds], ['group_id', '=', parseInt(groupId)]]],
+            { fields: ['id', 'name', 'model_id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink'] }
+          );
+          
+          if (accessRights && accessRights.length > 0) {
+            // Formatear y añadir el nombre del módulo
+            const formattedRights = formatAccessRights(accessRights).map(right => ({
+              ...right,
+              module_name: module.shortdesc
+            }));
+            
+            allRights = [...allRights, ...formattedRights];
+          }
+        }
+      } catch (moduleError) {
+        // Ignorar errores en módulos individuales para no interrumpir todo el proceso
+        Logger.log(`Error al procesar módulo ${module.name}: ${moduleError.toString()}`);
+      }
+    }
+    
+    // Ordenar por nombre de módulo y luego por nombre de modelo
+    allRights.sort((a, b) => {
+      if (a.module_name !== b.module_name) {
+        return a.module_name.localeCompare(b.module_name);
+      }
+      return a.model_name.localeCompare(b.model_name);
+    });
+    
+    return { success: true, data: allRights };
+  } catch (error) {
+    Logger.log(`Error en getGroupAccessRights: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Función para obtener las reglas de registro de un grupo
+function getGroupRecordRules(config, groupId) {
+  try {
+    // Obtener todos los módulos instalados
+    const installedModules = callOdooAPI(config, 'ir.module.module', 'search_read', 
+      [[['state', '=', 'installed']]],
+      { fields: ['id', 'name', 'shortdesc'] }
+    );
+    
+    if (!installedModules || installedModules.length === 0) {
+      return { success: true, data: [] };
+    }
+    
+    // Inicializar array para almacenar todas las reglas
+    let allRules = [];
+    
+    // Para cada módulo, obtener sus modelos y luego las reglas asociadas
+    for (const module of installedModules) {
+      try {
+        // Obtener modelos del módulo
+        const moduleModels = getModuleModels(config, module.id);
+        
+        if (moduleModels.success && moduleModels.data && moduleModels.data.length > 0) {
+          const modelNames = moduleModels.data.map(model => model.model);
+          
+          // Buscar reglas para estos modelos y este grupo
+          const recordRules = callOdooAPI(config, 'ir.rule', 'search_read', 
+            [[['model_id.model', 'in', modelNames], ['groups', 'in', [parseInt(groupId)]]]],
+            { fields: ['id', 'name', 'model_id', 'domain_force', 'global'] }
+          );
+          
+          if (recordRules && recordRules.length > 0) {
+            // Formatear y añadir el nombre del módulo
+            const formattedRules = formatRecordRules(recordRules).map(rule => ({
+              ...rule,
+              module_name: module.shortdesc
+            }));
+            
+            allRules = [...allRules, ...formattedRules];
+          }
+        }
+      } catch (moduleError) {
+        // Ignorar errores en módulos individuales para no interrumpir todo el proceso
+        Logger.log(`Error al procesar módulo ${module.name}: ${moduleError.toString()}`);
+      }
+    }
+    
+    // Ordenar por nombre de módulo y luego por nombre de modelo
+    allRules.sort((a, b) => {
+      if (a.module_name !== b.module_name) {
+        return a.module_name.localeCompare(b.module_name);
+      }
+      return a.model_name.localeCompare(b.model_name);
+    });
+    
+    return { success: true, data: allRules };
+  } catch (error) {
+    Logger.log(`Error en getGroupRecordRules: ${error.toString()}`);
     return { success: false, error: error.toString() };
   }
 }

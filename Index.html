@@ -26,22 +26,24 @@
       
       <div class="config-panel" id="config-panel">
         <h2>Configuración de Conexión</h2>
-        <div class="form-group">
-          <label for="odoo-url">URL de Odoo:</label>
-          <input type="text" id="odoo-url" placeholder="https://mi-instancia.odoo.com" />
-        </div>
-        <div class="form-group">
-          <label for="odoo-db">Base de datos:</label>
-          <input type="text" id="odoo-db" placeholder="nombre_bd" />
-        </div>
-        <div class="form-group">
-          <label for="odoo-username">Usuario:</label>
-          <input type="text" id="odoo-username" placeholder="admin" />
-        </div>
-        <div class="form-group">
-          <label for="odoo-password">Contraseña:</label>
-          <input type="password" id="odoo-password" />
-        </div>
+        <form id="odoo-config-form">
+          <div class="form-group">
+            <label for="odoo-url">URL de Odoo:</label>
+            <input type="text" id="odoo-url" placeholder="https://mi-instancia.odoo.com" />
+          </div>
+          <div class="form-group">
+            <label for="odoo-db">Base de datos:</label>
+            <input type="text" id="odoo-db" placeholder="nombre_bd" />
+          </div>
+          <div class="form-group">
+            <label for="odoo-username">Usuario:</label>
+            <input type="text" id="odoo-username" placeholder="admin" />
+          </div>
+          <div class="form-group">
+            <label for="odoo-password">Contraseña:</label>
+            <input type="password" id="odoo-password" />
+          </div>
+        </form>
         <div class="button-group">
           <button id="connect-btn" class="btn primary">Conectar</button>
           <button id="save-config-btn" class="btn secondary">Guardar Configuración</button>
@@ -336,8 +338,8 @@
         </div>
       </footer>
     </div>
-    
-    <!-- Scripts separados por funcionalidad -->
+
+    <!-- Scripts -->
     <?!= include('script_main'); ?>
     <?!= include('script_ui'); ?>
     <?!= include('script_users'); ?>

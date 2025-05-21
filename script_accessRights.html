@@ -1,0 +1,242 @@
+<script>
+  // Variables para derechos de acceso
+  let accessRights = [];
+
+  // Carga los derechos de acceso para una entidad y módulo
+  function loadAccessRights(entityType, entityId, moduleId) {
+    // Actualizar estado de los botones
+    updatePermissionButtons('access-rights', true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          accessRights = result.data;
+          renderAccessRights();
+        } else {
+          const tableBody = document.querySelector('#access-rights tbody');
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="6" class="error">Error: ${result.error}</td>
+            </tr>
+          `;
+          showToast('Error al cargar derechos de acceso: ' + result.error, 'error');
+        }
+        
+        // Actualizar estado de los botones
+        updatePermissionButtons('access-rights', false, accessRights.length > 0);
+      })
+      .withFailureHandler(function(error) {
+        const tableBody = document.querySelector('#access-rights tbody');
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="6" class="error">Error: ${error}</td>
+          </tr>
+        `;
+        showToast('Error al cargar derechos de acceso: ' + error, 'error');
+        
+        // Actualizar estado de los botones
+        updatePermissionButtons('access-rights', false, false);
+      })
+      .getAccessRights(odooConfig, {
+        entityType: entityType,
+        entityId: entityId,
+        moduleId: moduleId
+      });
+  }
+
+  // Renderiza la tabla de derechos de acceso
+  function renderAccessRights() {
+    const tableBody = document.querySelector('#access-rights tbody');
+    
+    if (!accessRights || accessRights.length === 0) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="6" class="placeholder">
+            <div class="no-data-message">
+              <i class="placeholder-icon"></i>
+              <p>No se encontraron derechos de acceso</p>
+            </div>
+          </td>
+        </tr>
+      `;
+      return;
+    }
+    
+    let html = '';
+    
+    accessRights.forEach(access => {
+      const moduleInfo = modules.find(m => m.id === access.module_id) || { name: 'Desconocido' };
+      const moduleName = moduleInfo.name;
+      
+      html += `
+        <tr data-id="${access.id}">
+          <td class="model-name" title="${access.model_id}">${access.model_name}</td>
+          <td class="text-center">
+            <div class="permission-switch">
+              <input type="checkbox" id="read-${access.id}" class="permission-toggle read" 
+                     ${access.perm_read ? 'checked' : ''}>
+              <label for="read-${access.id}" class="switch-label"></label>
+            </div>
+          </td>
+          <td class="text-center">
+            <div class="permission-switch">
+              <input type="checkbox" id="write-${access.id}" class="permission-toggle write" 
+                     ${access.perm_write ? 'checked' : ''}>
+              <label for="write-${access.id}" class="switch-label"></label>
+            </div>
+          </td>
+          <td class="text-center">
+            <div class="permission-switch">
+              <input type="checkbox" id="create-${access.id}" class="permission-toggle create" 
+                     ${access.perm_create ? 'checked' : ''}>
+              <label for="create-${access.id}" class="switch-label"></label>
+            </div>
+          </td>
+          <td class="text-center">
+            <div class="permission-switch">
+              <input type="checkbox" id="unlink-${access.id}" class="permission-toggle unlink" 
+                     ${access.perm_unlink ? 'checked' : ''}>
+              <label for="unlink-${access.id}" class="switch-label"></label>
+            </div>
+          </td>
+          <td class="module-column">${moduleName}</td>
+        </tr>
+      `;
+    });
+    
+    tableBody.innerHTML = html;
+    
+    // Agregar event listeners para cambios en los checkboxes
+    tableBody.querySelectorAll('.permission-toggle').forEach(toggle => {
+      toggle.addEventListener('change', function() {
+        const row = this.closest('tr');
+        const accessId = row.dataset.id;
+        const permission = this.classList.contains('read') ? 'perm_read' : 
+                          this.classList.contains('write') ? 'perm_write' : 
+                          this.classList.contains('create') ? 'perm_create' : 'perm_unlink';
+        
+        updateAccessRight(accessId, permission, this.checked);
+      });
+    });
+  }
+
+  // Actualiza un derecho de acceso específico
+  function updateAccessRight(accessId, permission, value) {
+    const entityType = document.getElementById('permission-entity-type').value;
+    const entityId = document.getElementById('permission-entity').value;
+    
+    // Desactivar todos los checkboxes mientras se guarda
+    const checkboxes = document.querySelectorAll('.permission-toggle');
+    checkboxes.forEach(cb => cb.disabled = true);
+    
+    // Mostrar indicador de carga
+    showToast('Guardando cambios...', 'info', 0);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          // Actualizar el objeto en memoria
+          const accessRight = accessRights.find(ar => ar.id === accessId);
+          if (accessRight) {
+            accessRight[permission] = value;
+          }
+          
+          showToast('Permiso actualizado correctamente', 'success');
+        } else {
+          showToast('Error al guardar permiso: ' + result.error, 'error');
+          
+          // Revertir cambio en la UI
+          const checkbox = document.querySelector(`tr[data-id="${accessId}"] .${permission.replace('perm_', '')}`);
+          if (checkbox) {
+            checkbox.checked = !value;
+          }
+        }
+        
+        // Reactivar checkboxes
+        checkboxes.forEach(cb => cb.disabled = false);
+      })
+      .withFailureHandler(function(error) {
+        showToast('Error al guardar permiso: ' + error, 'error');
+        
+        // Revertir cambio en la UI
+        const checkbox = document.querySelector(`tr[data-id="${accessId}"] .${permission.replace('perm_', '')}`);
+        if (checkbox) {
+          checkbox.checked = !value;
+        }
+        
+        // Reactivar checkboxes
+        checkboxes.forEach(cb => cb.disabled = false);
+      })
+      .updateAccessRight(odooConfig, {
+        entityType: entityType,
+        entityId: entityId,
+        accessId: accessId,
+        permission: permission,
+        value: value
+      });
+  }
+
+  // Función para guardar los derechos de acceso
+  function saveAccessRights() {
+    const entityType = document.getElementById('permission-entity-type').value;
+    const entityId = document.getElementById('permission-entity').value;
+    const moduleId = document.getElementById('permission-module').value;
+    
+    if (!entityId || !moduleId || moduleId === 'all') {
+      showToast('Por favor, selecciona un usuario/grupo y un módulo específico', 'warning');
+      return;
+    }
+    
+    // Recopilar datos de todos los checkboxes
+    const permissions = [];
+    accessRights.forEach(access => {
+      permissions.push({
+        id: access.id,
+        perm_read: access.perm_read,
+        perm_write: access.perm_write,
+        perm_create: access.perm_create,
+        perm_unlink: access.perm_unlink
+      });
+    });
+    
+    // Desactivar botón y mostrar progreso
+    updatePermissionButtons('access-rights', true);
+    showToast('Guardando derechos de acceso...', 'info', 0);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          showToast('Derechos de acceso guardados correctamente', 'success');
+        } else {
+          showToast('Error al guardar derechos de acceso: ' + result.error, 'error');
+        }
+        
+        updatePermissionButtons('access-rights', false, true);
+      })
+      .withFailureHandler(function(error) {
+        showToast('Error al guardar derechos de acceso: ' + error, 'error');
+        updatePermissionButtons('access-rights', false, true);
+      })
+      .saveAccessRights(odooConfig, {
+        entityType: entityType,
+        entityId: entityId,
+        moduleId: moduleId,
+        permissions: permissions
+      });
+  }
+
+  // Actualiza el estado de los botones en el panel de permisos
+  function updatePermissionButtons(tabId, loading, hasData = false) {
+    const saveBtn = document.querySelector(`#${tabId} .save-btn`);
+    const exportBtn = document.querySelector(`#${tabId} .export-btn`);
+    
+    if (saveBtn) {
+      saveBtn.disabled = loading || !hasData;
+      saveBtn.innerHTML = loading ? '<div class="spinner-small"></div> Guardando...' : 'Guardar';
+    }
+    
+    if (exportBtn) {
+      exportBtn.disabled = loading || !hasData;
+    }
+  }
+</script>

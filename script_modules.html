@@ -1,0 +1,255 @@
+<script>
+  // Carga los módulos de Odoo
+  function loadModules() {
+    const listElement = document.getElementById('modules-list');
+    listElement.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando módulos...</span></div>';
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          modules = result.data;
+          renderModules();
+        } else {
+          listElement.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+          showToast('Error al cargar módulos: ' + result.error, 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        listElement.innerHTML = '<div class="error">Error: ' + error + '</div>';
+        showToast('Error al cargar módulos: ' + error, 'error');
+      })
+      .getOdooModules(odooConfig);
+  }
+
+  // Renderizar lista de módulos
+  function renderModules() {
+    const listElement = document.getElementById('modules-list');
+    const filter = document.getElementById('module-filter').value;
+    const searchTerm = document.getElementById('module-search').value.toLowerCase().trim();
+    
+    if (!modules || modules.length === 0) {
+      listElement.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron módulos</p></div>';
+      return;
+    }
+    
+    filterModules();
+  }
+
+  // Filtra los módulos según criterios como instalado/no instalado y término de búsqueda
+  function filterModules() {
+    const listElement = document.getElementById('modules-list');
+    const filter = document.getElementById('module-filter').value;
+    const searchTerm = document.getElementById('module-search').value.toLowerCase().trim();
+    
+    if (!modules || modules.length === 0) {
+      listElement.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron módulos</p></div>';
+      return;
+    }
+    
+    // Agregar opción "Ver Todos" si no existe
+    if (!document.getElementById('show-all-modules')) {
+      const showAllItem = document.createElement('div');
+      showAllItem.id = 'show-all-modules';
+      showAllItem.className = 'list-item show-all-item';
+      showAllItem.innerHTML = `
+        <div class="module-item">
+          <div class="module-name"><strong>Ver Todos los Módulos</strong></div>
+          <div class="module-technical" style="font-size: 0.8em; color: var(--text-muted);">Mostrar todos sin filtros</div>
+        </div>
+      `;
+      showAllItem.addEventListener('click', function() {
+        document.getElementById('module-filter').value = 'all';
+        document.getElementById('module-search').value = '';
+        filterModules();
+      });
+      
+      listElement.innerHTML = '';
+      listElement.appendChild(showAllItem);
+    }
+    
+    let html = document.getElementById('show-all-modules').outerHTML;
+    let matchCount = 0;
+    
+    modules.forEach(module => {
+      // Aplicar filtros
+      let matchesSearch = true;
+      if (searchTerm) {
+        matchesSearch = module.name.toLowerCase().includes(searchTerm) || 
+                       module.technical_name.toLowerCase().includes(searchTerm) ||
+                       (module.description && module.description.toLowerCase().includes(searchTerm));
+      }
+      
+      let matchesFilter = true;
+      if (filter === 'installed') {
+        matchesFilter = module.installed;
+      } else if (filter === 'not-installed') {
+        matchesFilter = !module.installed;
+      }
+      
+      if (matchesSearch && matchesFilter) {
+        matchCount++;
+        html += createModuleItem(module);
+      }
+    });
+    
+    if (matchCount === 0) {
+      html += '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron módulos que coincidan con los filtros</p></div>';
+    }
+    
+    listElement.innerHTML = html;
+    
+    // Agregar event listeners a los módulos
+    document.querySelectorAll('.module-item').forEach(item => {
+      item.addEventListener('click', moduleItemClickHandler);
+    });
+    
+    // Actualizar contador
+    updateModuleCounter(matchCount);
+  }
+
+  // Crea un elemento HTML para un módulo
+  function createModuleItem(module) {
+    const statusClass = module.installed ? 'module-installed' : 'module-not-installed';
+    const statusText = module.installed ? 'Instalado' : 'No Instalado';
+    
+    return `
+      <div class="list-item" data-id="${module.id}" data-technical="${module.technical_name}">
+        <div class="module-item">
+          <div class="module-status ${statusClass}">${statusText}</div>
+          <div class="module-name">${module.name}</div>
+          <div class="module-technical">${module.technical_name}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Manejador de eventos para clic en un módulo
+  function moduleItemClickHandler(event) {
+    const item = event.currentTarget.closest('.list-item');
+    if (!item || item.id === 'show-all-modules') return;
+    
+    const moduleId = item.dataset.id;
+    
+    // Si ya está seleccionado, deseleccionar
+    if (item.classList.contains('selected')) {
+      item.classList.remove('selected');
+      selectedModule = null;
+      closeModuleDetail();
+      return;
+    }
+    
+    // Deseleccionar el anterior
+    document.querySelectorAll('.list-item.selected').forEach(selected => {
+      selected.classList.remove('selected');
+    });
+    
+    // Seleccionar el nuevo
+    item.classList.add('selected');
+    selectedModule = modules.find(m => m.id === moduleId);
+    
+    // Mostrar detalles
+    showModuleDetail(selectedModule);
+  }
+
+  // Muestra los detalles de un módulo
+  function showModuleDetail(module) {
+    const detailPanel = document.getElementById('module-detail');
+    detailPanel.classList.add('active');
+    
+    let statusClass = module.installed ? 'badge-success' : 'badge-secondary';
+    let statusText = module.installed ? 'Instalado' : 'No Instalado';
+    
+    detailPanel.innerHTML = `
+      <div class="detail-header">
+        <h3>${module.name}</h3>
+        <span class="badge ${statusClass}">${statusText}</span>
+      </div>
+      <div class="detail-content">
+        <div class="detail-section">
+          <div class="detail-label">Nombre Técnico:</div>
+          <div class="detail-value">${module.technical_name}</div>
+        </div>
+        
+        <div class="detail-section">
+          <div class="detail-label">Autor:</div>
+          <div class="detail-value">${module.author || 'No especificado'}</div>
+        </div>
+        
+        <div class="detail-section">
+          <div class="detail-label">Versión:</div>
+          <div class="detail-value">${module.version || 'No especificada'}</div>
+        </div>
+        
+        <div class="detail-section">
+          <div class="detail-label">Categoría:</div>
+          <div class="detail-value">${module.category || 'Sin categoría'}</div>
+        </div>
+        
+        <div class="detail-section">
+          <div class="detail-label">Descripción:</div>
+          <div class="detail-value description">${module.description || 'Sin descripción'}</div>
+        </div>
+        
+        <div class="detail-section">
+          <div class="detail-label">Dependencias:</div>
+          <div class="detail-value">
+            ${module.dependencies && module.dependencies.length > 0 
+              ? module.dependencies.map(dep => `<span class="dependency-item">${dep}</span>`).join('')
+              : 'Ninguna'}
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Actualizar el panel de permisos si está en esa pestaña
+    updatePermissionModuleOptions();
+  }
+
+  // Cierra el panel de detalles de módulo
+  function closeModuleDetail() {
+    const detailPanel = document.getElementById('module-detail');
+    detailPanel.classList.remove('active');
+    detailPanel.innerHTML = '<div class="placeholder"><p>Selecciona un módulo para ver detalles</p></div>';
+  }
+
+  // Actualiza el contador de módulos
+  function updateModuleCounter(count) {
+    const counter = document.getElementById('module-counter');
+    if (counter) {
+      counter.textContent = count + ' módulo' + (count !== 1 ? 's' : '');
+    }
+  }
+
+  // Función para actualizar las opciones del selector de módulos en el panel de permisos
+  function updatePermissionModuleOptions() {
+    // Si no estamos en la pestaña de permisos, no hacer nada
+    if (currentTab !== 'permissions') return;
+    
+    // Obtener el valor actual seleccionado
+    const moduleSelect = document.getElementById('permission-module');
+    const currentValue = moduleSelect.value;
+    
+    // Iniciar con la opción "Todos los módulos"
+    moduleSelect.innerHTML = '<option value="all">Todos los módulos</option>';
+    
+    // Solo mostrar módulos instalados
+    const availableModules = modules ? modules.filter(m => m.installed) : [];
+    
+    // Ordenar módulos alfabéticamente por nombre
+    availableModules.sort((a, b) => a.name.localeCompare(b.name));
+    
+    availableModules.forEach(module => {
+      const option = document.createElement('option');
+      option.value = module.id;
+      option.textContent = module.name;
+      moduleSelect.appendChild(option);
+    });
+    
+    // Restaurar el valor seleccionado si existe
+    if (currentValue && moduleSelect.querySelector(`option[value="${currentValue}"]`)) {
+      moduleSelect.value = currentValue;
+    }
+    
+    moduleSelect.disabled = availableModules.length === 0;
+  }
+</script>

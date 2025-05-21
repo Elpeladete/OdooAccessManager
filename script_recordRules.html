@@ -1,0 +1,176 @@
+<script>
+  // Variables para reglas de registro
+  let recordRules = [];
+
+  // Carga las reglas de registro para una entidad y módulo
+  function loadRecordRules(entityType, entityId, moduleId) {
+    // Actualizar estado de los botones
+    updatePermissionButtons('record-rules', true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          recordRules = result.data;
+          renderRecordRules();
+        } else {
+          const tableBody = document.querySelector('#record-rules tbody');
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="5" class="error">Error: ${result.error}</td>
+            </tr>
+          `;
+          showToast('Error al cargar reglas de registro: ' + result.error, 'error');
+        }
+        
+        // Actualizar estado de los botones
+        updatePermissionButtons('record-rules', false, recordRules.length > 0);
+      })
+      .withFailureHandler(function(error) {
+        const tableBody = document.querySelector('#record-rules tbody');
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="5" class="error">Error: ${error}</td>
+          </tr>
+        `;
+        showToast('Error al cargar reglas de registro: ' + error, 'error');
+        
+        // Actualizar estado de los botones
+        updatePermissionButtons('record-rules', false, false);
+      })
+      .getRecordRules(odooConfig, {
+        entityType: entityType,
+        entityId: entityId,
+        moduleId: moduleId
+      });
+  }
+
+  // Renderiza la tabla de reglas de registro
+  function renderRecordRules() {
+    const tableBody = document.querySelector('#record-rules tbody');
+    
+    if (!recordRules || recordRules.length === 0) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="5" class="placeholder">
+            <div class="no-data-message">
+              <i class="placeholder-icon"></i>
+              <p>No se encontraron reglas de registro</p>
+            </div>
+          </td>
+        </tr>
+      `;
+      return;
+    }
+    
+    let html = '';
+    
+    recordRules.forEach(rule => {
+      const moduleInfo = modules.find(m => m.id === rule.module_id) || { name: 'Desconocido' };
+      const moduleName = moduleInfo.name;
+      
+      const actions = ['read', 'write', 'create', 'unlink'];
+      const actionLabels = {
+        'read': 'Leer', 
+        'write': 'Escribir', 
+        'create': 'Crear', 
+        'unlink': 'Eliminar'
+      };
+      
+      const perms = [];
+      actions.forEach(action => {
+        if (rule[`perm_${action}`]) {
+          perms.push(actionLabels[action]);
+        }
+      });
+      
+      const permText = perms.length > 0 ? perms.join(', ') : 'Ninguno';
+      
+      html += `
+        <tr data-id="${rule.id}">
+          <td>${rule.name}</td>
+          <td class="model-name" title="${rule.model_id}">${rule.model_name}</td>
+          <td class="actions">${permText}</td>
+          <td title="${rule.domain_force}">
+            <div class="domain-content">
+              ${rule.domain_force || '[]'}
+            </div>
+          </td>
+          <td class="module-column">${moduleName}</td>
+        </tr>
+      `;
+    });
+    
+    tableBody.innerHTML = html;
+    
+    // Agregar event listeners para filas
+    tableBody.querySelectorAll('tr').forEach(row => {
+      row.addEventListener('click', function() {
+        const ruleId = this.dataset.id;
+        const rule = recordRules.find(r => r.id === ruleId);
+        if (rule) {
+          showRuleDetail(rule);
+        }
+      });
+    });
+  }
+
+  // Muestra los detalles de una regla de registro
+  function showRuleDetail(rule) {
+    const moduleInfo = modules.find(m => m.id === rule.module_id) || { name: 'Desconocido' };
+    const moduleName = moduleInfo.name;
+    
+    const modal = createModal({
+      title: 'Detalles de Regla de Registro',
+      size: 'large',
+      content: `
+        <div class="detail-section">
+          <div class="detail-label">Nombre:</div>
+          <div class="detail-value">${rule.name}</div>
+        </div>
+        
+        <div class="detail-section">
+          <div class="detail-label">Modelo:</div>
+          <div class="detail-value">${rule.model_name} (${rule.model_id})</div>
+        </div>
+        
+        <div class="detail-section">
+          <div class="detail-label">Módulo:</div>
+          <div class="detail-value">${moduleName}</div>
+        </div>
+        
+        <div class="detail-section">
+          <div class="detail-label">Permisos:</div>
+          <div class="detail-value permissions-grid">
+            <div class="permission-item ${rule.perm_read ? 'active' : ''}">Leer</div>
+            <div class="permission-item ${rule.perm_write ? 'active' : ''}">Escribir</div>
+            <div class="permission-item ${rule.perm_create ? 'active' : ''}">Crear</div>
+            <div class="permission-item ${rule.perm_unlink ? 'active' : ''}">Eliminar</div>
+          </div>
+        </div>
+        
+        <div class="detail-section">
+          <div class="detail-label">Dominio:</div>
+          <div class="detail-value code-block">${rule.domain_force || '[]'}</div>
+        </div>
+        
+        <div class="detail-section">
+          <div class="detail-label">Global:</div>
+          <div class="detail-value">${rule.global ? 'Sí' : 'No'}</div>
+        </div>
+        
+        <div class="detail-section">
+          <div class="detail-label">Activo:</div>
+          <div class="detail-value">${rule.active ? 'Sí' : 'No'}</div>
+        </div>
+      `,
+      buttons: [
+        {
+          text: 'Cerrar',
+          action: 'close'
+        }
+      ]
+    });
+    
+    modal.show();
+  }
+</script>

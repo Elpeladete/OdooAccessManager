@@ -1,0 +1,321 @@
+<script>
+  // Función para mostrar un mensaje toast
+  function showToast(message, type = 'info', duration = 3000) {
+    const toastContainer = document.getElementById('toast-container') || createToastContainer();
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = message;
+    
+    toastContainer.appendChild(toast);
+    
+    // Mostrar el toast
+    setTimeout(() => {
+      toast.classList.add('show');
+    }, 10);
+    
+    // Ocultar después del tiempo especificado (0 para mantenerlo hasta que sea cerrado)
+    if (duration > 0) {
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+          toast.remove();
+        }, 300); // Esperar a que termine la animación
+      }, duration);
+    } else {
+      // Si duration es 0, agregar botón para cerrar
+      const closeBtn = document.createElement('span');
+      closeBtn.className = 'toast-close';
+      closeBtn.innerHTML = '&times;';
+      closeBtn.addEventListener('click', () => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+          toast.remove();
+        }, 300);
+      });
+      toast.appendChild(closeBtn);
+    }
+    
+    return toast;
+  }
+
+  // Crea el contenedor de toasts si no existe
+  function createToastContainer() {
+    const container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
+    return container;
+  }
+
+  // Función para crear y mostrar modales
+  function createModal(options) {
+    const defaults = {
+      title: 'Modal',
+      content: '',
+      size: 'medium', // small, medium, large
+      closable: true,
+      buttons: [
+        {
+          text: 'Cerrar',
+          action: 'close',
+          type: 'secondary'
+        }
+      ]
+    };
+    
+    const config = { ...defaults, ...options };
+    
+    // Crear elementos del modal
+    const modalOverlay = document.createElement('div');
+    modalOverlay.className = 'modal-overlay';
+    
+    const modalContainer = document.createElement('div');
+    modalContainer.className = `modal-container ${config.size}`;
+    
+    const modalHeader = document.createElement('div');
+    modalHeader.className = 'modal-header';
+    
+    const modalTitle = document.createElement('h3');
+    modalTitle.className = 'modal-title';
+    modalTitle.textContent = config.title;
+    
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-content';
+    
+    if (typeof config.content === 'string') {
+      modalContent.innerHTML = config.content;
+    } else if (config.content instanceof HTMLElement) {
+      modalContent.appendChild(config.content);
+    }
+    
+    const modalFooter = document.createElement('div');
+    modalFooter.className = 'modal-footer';
+    
+    // Agregar botón de cierre si es necesario
+    if (config.closable) {
+      const closeBtn = document.createElement('span');
+      closeBtn.className = 'modal-close';
+      closeBtn.innerHTML = '&times;';
+      closeBtn.addEventListener('click', () => {
+        hideModal();
+      });
+      modalHeader.appendChild(closeBtn);
+    }
+    
+    // Agregar botones
+    config.buttons.forEach(button => {
+      const btn = document.createElement('button');
+      btn.className = `btn ${button.type || 'primary'}`;
+      btn.textContent = button.text;
+      
+      btn.addEventListener('click', () => {
+        if (button.action === 'close') {
+          hideModal();
+        } else if (typeof button.action === 'function') {
+          button.action(modalInstance);
+        }
+      });
+      
+      modalFooter.appendChild(btn);
+    });
+    
+    // Construir estructura del modal
+    modalHeader.appendChild(modalTitle);
+    modalContainer.appendChild(modalHeader);
+    modalContainer.appendChild(modalContent);
+    modalContainer.appendChild(modalFooter);
+    modalOverlay.appendChild(modalContainer);
+    
+    // Función para mostrar el modal
+    function showModal() {
+      document.body.appendChild(modalOverlay);
+      setTimeout(() => {
+        modalOverlay.classList.add('active');
+        modalContainer.classList.add('active');
+      }, 10);
+      
+      // Agregar event listener para cerrar al hacer clic fuera si es closable
+      if (config.closable) {
+        modalOverlay.addEventListener('click', (e) => {
+          if (e.target === modalOverlay) {
+            hideModal();
+          }
+        });
+      }
+      
+      // Agregar event listener para tecla ESC
+      document.addEventListener('keydown', handleEscKey);
+    }
+    
+    // Función para ocultar el modal
+    function hideModal() {
+      modalOverlay.classList.remove('active');
+      modalContainer.classList.remove('active');
+      
+      setTimeout(() => {
+        if (modalOverlay.parentNode) {
+          modalOverlay.parentNode.removeChild(modalOverlay);
+        }
+        
+        // Remover event listener al cerrar
+        document.removeEventListener('keydown', handleEscKey);
+      }, 300); // Esperar a que termine la animación
+    }
+    
+    // Manejador para tecla ESC
+    function handleEscKey(e) {
+      if (e.key === 'Escape' && config.closable) {
+        hideModal();
+      }
+    }
+    
+    // Objeto con métodos para controlar el modal
+    const modalInstance = {
+      show: showModal,
+      hide: hideModal,
+      getContent: () => modalContent,
+      setContent: (content) => {
+        modalContent.innerHTML = '';
+        if (typeof content === 'string') {
+          modalContent.innerHTML = content;
+        } else if (content instanceof HTMLElement) {
+          modalContent.appendChild(content);
+        }
+      },
+      setTitle: (title) => {
+        modalTitle.textContent = title;
+      }
+    };
+    
+    return modalInstance;
+  }
+
+  // Función para mostrar un diálogo de confirmación
+  function showConfirmDialog(options) {
+    const defaults = {
+      title: 'Confirmar',
+      message: '¿Estás seguro?',
+      confirmText: 'Confirmar',
+      cancelText: 'Cancelar',
+      confirmType: 'primary',
+      cancelType: 'secondary',
+      onConfirm: () => {},
+      onCancel: () => {}
+    };
+    
+    const config = { ...defaults, ...options };
+    
+    return createModal({
+      title: config.title,
+      content: `<p class="confirm-message">${config.message}</p>`,
+      size: 'small',
+      buttons: [
+        {
+          text: config.confirmText,
+          type: config.confirmType,
+          action: (modal) => {
+            modal.hide();
+            config.onConfirm();
+          }
+        },
+        {
+          text: config.cancelText,
+          type: config.cancelType,
+          action: (modal) => {
+            modal.hide();
+            config.onCancel();
+          }
+        }
+      ]
+    });
+  }
+
+  // Configura los event listeners principales para la aplicación
+  function setupEventListeners() {
+    // Botones de conexión
+    document.getElementById('connect-btn').addEventListener('click', connectToOdoo);
+    document.getElementById('save-config-btn').addEventListener('click', saveOdooConfig);
+    
+    // Tabs principales
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        switchTab(this.dataset.tab);
+      });
+    });
+    
+    // Tabs de permisos
+    document.querySelectorAll('.permission-tab-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        switchPermissionTab(this.dataset.tab);
+      });
+    });
+    
+    // Filtros de permisos
+    document.getElementById('permission-entity-type').addEventListener('change', updatePermissionEntityOptions);
+    document.getElementById('permission-entity').addEventListener('change', loadEntityPermissions);
+    document.getElementById('permission-module').addEventListener('change', loadPermissions);
+    
+    // Botones de actualización
+    document.getElementById('refresh-users-btn').addEventListener('click', loadUsersAndGroups);
+    document.getElementById('refresh-modules-btn').addEventListener('click', loadModules);
+    
+    // Filtros de módulos
+    document.getElementById('module-filter').addEventListener('change', filterModules);
+    document.getElementById('module-search').addEventListener('input', function() {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = setTimeout(filterModules, 300);
+    });
+    
+    // Botones de permisos
+    document.querySelectorAll('.permission-tab-pane .save-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const tabId = this.closest('.permission-tab-pane').id;
+        
+        switch(tabId) {
+          case 'access-rights':
+            saveAccessRights();
+            break;
+          case 'record-rules':
+            saveRecordRules();
+            break;
+          case 'menu-access':
+            saveMenuAccess();
+            break;
+        }
+      });
+    });
+    
+    // Añadir listener para tecla Enter en el panel de conexión
+    document.querySelectorAll('#config-panel input').forEach(input => {
+      input.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+          connectToOdoo();
+        }
+      });
+    });
+  }
+
+  // Cambia entre las pestañas principales (usuarios/grupos, módulos, permisos)
+  function switchTab(tabId) {
+    currentTab = tabId;
+    
+    // Actualizar botones de tabs
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === tabId);
+    });
+    
+    // Actualizar contenido de tabs
+    document.querySelectorAll('.tab-pane').forEach(pane => {
+      pane.classList.toggle('active', pane.id === tabId);
+    });
+    
+    // Cargar datos si es necesario
+    if (tabId === 'users-groups' && usersAndGroups.length === 0) {
+      loadUsersAndGroups();
+    } else if (tabId === 'modules' && modules.length === 0) {
+      loadModules();
+    } else if (tabId === 'permissions') {
+      updatePermissionModuleOptions();
+    }
+  }
+</script>

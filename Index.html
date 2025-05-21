@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestor de Permisos Odoo | D&E AG TECH</title>
+    
+    <!-- Estilos -->
     <?!= include('styles'); ?>
   </head>
   <body>
@@ -59,6 +61,10 @@
           <button class="tab-btn" data-tab="permissions">
             <i class="tab-icon permissions-icon"></i>
             Permisos
+          </button>
+          <button class="tab-btn" data-tab="model-search">
+            <i class="tab-icon search-icon"></i>
+            Buscar por Modelo
           </button>
         </div>
         
@@ -276,6 +282,32 @@
             </div>
           </div>
         </div>
+
+          <!-- Nueva pestaña de búsqueda por modelo -->
+          <div class="tab-pane" id="model-search">
+            <div class="panel-header">
+              <h2>Búsqueda por Modelo</h2>
+              <div class="filter-controls">
+                <div class="search-box" style="max-width: 500px;">
+                  <i class="search-icon"></i>
+                  <input type="text" id="model-search-input" placeholder="Buscar por nombre o nombre técnico del modelo..." />
+                </div>
+                <button id="search-model-btn" class="btn primary">Buscar</button>
+              </div>
+            </div>
+            
+            <div class="panel-body">
+              <div class="detail-container" id="model-search-results" style="flex: 1;">
+                <div class="placeholder">
+                  <i class="placeholder-icon"></i>
+                  <p>Ingresa el nombre o nombre técnico de un modelo para buscar sus permisos</p>
+                  <p style="font-size: 0.9em; color: var(--text-muted); margin-top: 10px;">
+                    Ejemplos: "Producto", "res.partner", "Factura", etc.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
       </div>
       
       <!-- Modales -->
@@ -295,7 +327,7 @@
         </div>
       </div>
       
-      <div id="toast" class="toast"></div>
+      <div id="toast-container"></div>
       
       <footer>
         <div class="footer-content">
@@ -305,6 +337,14 @@
       </footer>
     </div>
     
-    <?!= include('script'); ?>
+    <!-- Scripts separados por funcionalidad -->
+    <?!= include('script_main'); ?>
+    <?!= include('script_ui'); ?>
+    <?!= include('script_users'); ?>
+    <?!= include('script_modules'); ?>
+    <?!= include('script_permissions'); ?>
+    <?!= include('script_accessRights'); ?>
+    <?!= include('script_recordRules'); ?>
+    <?!= include('script_menuAccess'); ?>
   </body>
 </html>

@@ -1,0 +1,200 @@
+<style>
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    background: var(--primary-gradient);
+    color: white;
+    padding: 1rem;
+    border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0;
+  }
+
+  .logo-container {
+    flex: 0 0 80px;
+    margin-right: 1rem;
+  }
+
+  .logo {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    border: 2px solid white;
+    object-fit: cover;
+  }
+
+  .header-content {
+    flex: 1;
+  }
+
+  .header-content h1 {
+    margin: 0;
+    color: white;
+  }
+
+  .connection-status {
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+  }
+
+  .indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 0.5rem;
+  }
+
+  .indicator.connected {
+    background-color: var(--success-color);
+    box-shadow: 0 0 6px var(--success-color);
+  }
+
+  .indicator.disconnected {
+    background-color: var(--danger-color);
+    box-shadow: 0 0 6px var(--danger-color);
+  }
+
+  /* Config Panel */
+  .config-panel {
+    padding: 1.5rem;
+    background-color: white;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .button-group {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  /* Main Content */
+  .main-content {
+    background-color: white;
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    background-color: var(--light-gray);
+    border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .tab-btn {
+    padding: 1rem 1.5rem;
+    border: none;
+    background: none;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-speed);
+    position: relative;
+  }
+
+  .tab-btn:hover {
+    color: var(--primary-color);
+  }
+
+  .tab-btn.active {
+    color: var(--primary-color);
+  }
+
+  .tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background-color: var(--primary-color);
+  }
+
+  .tab-pane {
+    display: none;
+    padding: 1.5rem;
+  }
+
+  .tab-pane.active {
+    display: block;
+  }
+
+  /* Panels */
+  .panel {
+    margin-bottom: 2rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background-color: white;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--light-gray);
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+  }
+
+  .panel-title {
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .panel-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .panel-body {
+    padding: 1rem;
+  }
+
+  .panel-footer {
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--light-gray);
+    border-radius: 0 0 var(--border-radius) var(--border-radius);
+  }
+
+  /* Grid Layout */
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    margin: -0.5rem;
+  }
+
+  .col {
+    flex: 1 0 0%;
+    padding: 0.5rem;
+  }
+
+  /* For specific column sizes */
+  .col-4 {
+    flex: 0 0 33.333333%;
+    max-width: 33.333333%;
+    padding: 0.5rem;
+  }
+  
+  .col-6 {
+    flex: 0 0 50%;
+    max-width: 50%;
+    padding: 0.5rem;
+  }
+  
+  .col-8 {
+    flex: 0 0 66.666667%;
+    max-width: 66.666667%;
+    padding: 0.5rem;
+  }
+  
+  .col-12 {
+    flex: 0 0 100%;
+    max-width: 100%;
+    padding: 0.5rem;
+  }
+</style>

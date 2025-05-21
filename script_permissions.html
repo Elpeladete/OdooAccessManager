@@ -1,0 +1,173 @@
+<script>
+  // Carga los permisos para una entidad y módulo específico
+  function loadPermissions() {
+    const entityType = document.getElementById('permission-entity-type').value;
+    const entityId = document.getElementById('permission-entity').value;
+    const moduleId = document.getElementById('permission-module').value;
+    
+    if (!entityId) {
+      // Mostrar mensaje informativo si no se ha seleccionado entidad
+      const tabPanes = document.querySelectorAll('.permission-tab-pane.active');
+      tabPanes.forEach(pane => {
+        const tableBody = pane.querySelector('tbody');
+        if (tableBody) {
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="${pane.id === 'access-rights' ? '6' : pane.id === 'record-rules' ? '5' : '2'}" class="placeholder">
+                <div class="no-data-message">
+                  <i class="placeholder-icon"></i>
+                  <p>Selecciona primero un usuario/grupo</p>
+                </div>
+              </td>
+            </tr>
+          `;
+        }
+      });
+      return;
+    }
+    
+    if (!moduleId) {
+      // Mostrar mensaje informativo si no se ha seleccionado módulo
+      const tabPanes = document.querySelectorAll('.permission-tab-pane.active');
+      tabPanes.forEach(pane => {
+        const tableBody = pane.querySelector('tbody');
+        if (tableBody) {
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="${pane.id === 'access-rights' ? '6' : pane.id === 'record-rules' ? '5' : '2'}" class="placeholder">
+                <div class="no-data-message">
+                  <i class="placeholder-icon"></i>
+                  <p>Selecciona un módulo para ver permisos</p>
+                </div>
+              </td>
+            </tr>
+          `;
+        }
+      });
+      return;
+    }
+    
+    // Mostrar indicadores de carga en todas las pestañas
+    document.querySelectorAll('.permission-tab-pane.active').forEach(pane => {
+      const tableBody = pane.querySelector('tbody');
+      if (tableBody) {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="${pane.id === 'access-rights' ? '6' : pane.id === 'record-rules' ? '5' : '2'}" class="loading">
+              <div class="spinner"></div>
+              <span>Cargando permisos...</span>
+            </td>
+          </tr>
+        `;
+      }
+    });
+    
+    // Cargar permisos según la pestaña activa
+    switch(currentPermissionTab) {
+      case 'access-rights':
+        loadAccessRights(entityType, entityId, moduleId);
+        break;
+      case 'record-rules':
+        loadRecordRules(entityType, entityId, moduleId);
+        break;
+      case 'menu-access':
+        loadMenuAccess(entityType, entityId, moduleId);
+        break;
+    }
+  }
+
+  // Carga los permisos específicos para una entidad (usuario o grupo)
+  function loadEntityPermissions() {
+    const entityType = document.getElementById('permission-entity-type').value;
+    const entityId = document.getElementById('permission-entity').value;
+    
+    if (!entityId) return;
+    
+    // Obtener el nombre de la entidad seleccionada para mostrar en el título
+    let entityName = '';
+    
+    if (entityType === 'group') {
+      const group = usersAndGroups.find(g => g.id === entityId);
+      entityName = group ? group.name : 'Grupo seleccionado';
+    } else {
+      const user = usersAndGroups.find(u => u.id === entityId);
+      entityName = user ? user.name : 'Usuario seleccionado';
+    }
+    
+    // Actualizar título del panel
+    const panelTitle = document.querySelector('.permissions-panel .panel-title');
+    if (panelTitle) {
+      panelTitle.textContent = `Permisos de ${entityName}`;
+    }
+    
+    // Cargar los permisos según la opción seleccionada
+    loadPermissions();
+  }
+
+  // Función para actualizar la lista de entidades en el panel de permisos
+  function updatePermissionEntityOptions() {
+    const entityTypeSelect = document.getElementById('permission-entity-type');
+    const entitySelect = document.getElementById('permission-entity');
+    const entityType = entityTypeSelect.value;
+    
+    // Limpiar las opciones actuales
+    entitySelect.innerHTML = '<option value="">-- Seleccionar --</option>';
+    
+    // Obtener la lista adecuada según el tipo de entidad
+    let entities = [];
+    if (entityType === 'group') {
+      entities = usersAndGroups.filter(entity => entity.type === 'group');
+    } else {
+      entities = usersAndGroups.filter(entity => entity.type === 'user');
+    }
+    
+    // Ordenar alfabéticamente
+    entities.sort((a, b) => a.name.localeCompare(b.name));
+    
+    // Agregar las opciones al selector
+    entities.forEach(entity => {
+      const option = document.createElement('option');
+      option.value = entity.id;
+      option.textContent = entity.name;
+      entitySelect.appendChild(option);
+    });
+    
+    // Habilitar/deshabilitar según si hay opciones
+    entitySelect.disabled = entities.length === 0;
+    
+    // Limpiar las tablas de permisos
+    document.querySelectorAll('.permission-tab-pane tbody').forEach(tbody => {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="${currentPermissionTab === 'access-rights' ? '6' : currentPermissionTab === 'record-rules' ? '5' : '2'}" class="placeholder">
+            <div class="no-data-message">
+              <i class="placeholder-icon"></i>
+              <p>Selecciona primero un ${entityType === 'group' ? 'grupo' : 'usuario'}</p>
+            </div>
+          </td>
+        </tr>
+      `;
+    });
+  }
+
+  // Cambia entre las pestañas de permisos (derechos acceso, reglas registro, acceso menús)
+  function switchPermissionTab(tabId) {
+    // Desactivar todas las pestañas y paneles
+    document.querySelectorAll('.permission-tab-btn').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    document.querySelectorAll('.permission-tab-pane').forEach(pane => {
+      pane.classList.remove('active');
+    });
+    
+    // Activar la pestaña seleccionada
+    document.querySelector(`.permission-tab-btn[data-tab="${tabId}"]`).classList.add('active');
+    document.getElementById(tabId).classList.add('active');
+    
+    // Actualizar la variable global
+    currentPermissionTab = tabId;
+    
+    // Recargar los permisos si hay una entidad seleccionada
+    loadPermissions();
+  }
+</script>

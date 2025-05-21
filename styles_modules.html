@@ -1,0 +1,63 @@
+<style>
+  /* Estilos específicos para la sección de módulos */
+  
+  /* Lista de módulos */
+  .module-item {
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem;
+  }
+  
+  .module-status {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--border-radius-sm);
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+  
+  .module-installed {
+    background-color: var(--success-color);
+    color: white;
+  }
+  
+  .module-not-installed {
+    background-color: var(--text-muted);
+    color: white;
+  }
+  
+  .module-name {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+  
+  .module-technical {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-family: monospace;
+  }
+  
+  /* Detalles de módulo */
+  .dependency-item {
+    display: inline-block;
+    background-color: var(--light-gray);
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--border-radius-sm);
+    margin: 0.15rem;
+    font-size: 0.8rem;
+    font-family: monospace;
+  }
+  
+  .show-all-item {
+    background-color: var(--light-gray);
+    padding: 0.5rem;
+    border-radius: var(--border-radius-sm);
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+  }
+  
+  .show-all-item:hover {
+    background-color: var(--medium-gray);
+  }
+</style>

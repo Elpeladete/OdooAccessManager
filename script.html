@@ -11,6 +11,177 @@
   let recordRules = [];
   let menuAccess = [];
 
+  // Función para actualizar las opciones del selector de módulos en el panel de permisos
+  function updatePermissionModuleOptions() {
+    // Si no estamos en la pestaña de permisos, no hacer nada
+    if (currentTab !== 'permissions') return;
+    
+    // Obtener el valor actual seleccionado
+    const moduleSelect = document.getElementById('permission-module');
+    const currentValue = moduleSelect.value;
+    
+    // Iniciar con la opción "Todos los módulos"
+    moduleSelect.innerHTML = '<option value="all">Todos los módulos</option>';
+    
+    // Solo mostrar módulos instalados
+    const availableModules = modules ? modules.filter(m => m.installed) : [];
+    
+    // Ordenar módulos alfabéticamente por nombre
+    availableModules.sort((a, b) => a.name.localeCompare(b.name));
+    
+    availableModules.forEach(module => {
+      const option = document.createElement('option');
+      option.value = module.id;
+      option.textContent = module.name;
+      moduleSelect.appendChild(option);
+    });
+    
+    // Restaurar el valor seleccionado si existe
+    if (currentValue && moduleSelect.querySelector(`option[value="${currentValue}"]`)) {
+      moduleSelect.value = currentValue;
+    }
+    
+    moduleSelect.disabled = availableModules.length === 0;
+  }
+
+  // Función para guardar los derechos de acceso
+  function saveAccessRights() {
+    const entityType = document.getElementById('permission-entity-type').value;
+    const entityId = document.getElementById('permission-entity').value;
+    const moduleId = document.getElementById('permission-module').value;
+    
+    if (!entityId) {
+      showToast('Selecciona una entidad', 'warning');
+      return;
+    }
+    
+    if (!moduleId) {
+      showToast('Selecciona un módulo', 'warning');
+      return;
+    }
+    
+    // Si no hay cambios, no hacer nada
+    if (!accessRights || accessRights.length === 0) {
+      showToast('No hay derechos de acceso para guardar', 'info');
+      return;
+    }
+    
+    // Mostrar indicador de carga
+    document.getElementById('save-access-rights-btn').disabled = true;
+    document.getElementById('save-access-rights-btn').innerHTML = '<div class="spinner-small"></div> Guardando...';
+    
+    // Enviar al backend
+    google.script.run
+      .withSuccessHandler(function(result) {
+        document.getElementById('save-access-rights-btn').disabled = false;
+        document.getElementById('save-access-rights-btn').textContent = 'Guardar Cambios';
+        
+        if (result.success) {
+          showToast('Derechos de acceso guardados correctamente', 'success');
+        } else {
+          showToast('Error al guardar derechos de acceso: ' + result.error, 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        document.getElementById('save-access-rights-btn').disabled = false;
+        document.getElementById('save-access-rights-btn').textContent = 'Guardar Cambios';
+        showToast('Error al guardar derechos de acceso: ' + error, 'error');
+      })
+      .saveAccessRights(odooConfig, entityType, entityId, moduleId, accessRights);
+  }
+  
+  // Función para guardar las reglas de registro
+  function saveRecordRules() {
+    const entityType = document.getElementById('permission-entity-type').value;
+    const entityId = document.getElementById('permission-entity').value;
+    const moduleId = document.getElementById('permission-module').value;
+    
+    if (!entityId) {
+      showToast('Selecciona una entidad', 'warning');
+      return;
+    }
+    
+    if (!moduleId) {
+      showToast('Selecciona un módulo', 'warning');
+      return;
+    }
+    
+    // Si no hay cambios, no hacer nada
+    if (!recordRules || recordRules.length === 0) {
+      showToast('No hay reglas de registro para guardar', 'info');
+      return;
+    }
+    
+    // Mostrar indicador de carga
+    document.getElementById('save-record-rules-btn').disabled = true;
+    document.getElementById('save-record-rules-btn').innerHTML = '<div class="spinner-small"></div> Guardando...';
+    
+    // Enviar al backend
+    google.script.run
+      .withSuccessHandler(function(result) {
+        document.getElementById('save-record-rules-btn').disabled = false;
+        document.getElementById('save-record-rules-btn').textContent = 'Guardar Cambios';
+        
+        if (result.success) {
+          showToast('Reglas de registro guardadas correctamente', 'success');
+        } else {
+          showToast('Error al guardar reglas de registro: ' + result.error, 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        document.getElementById('save-record-rules-btn').disabled = false;
+        document.getElementById('save-record-rules-btn').textContent = 'Guardar Cambios';
+        showToast('Error al guardar reglas de registro: ' + error, 'error');
+      })
+      .saveRecordRules(odooConfig, entityType, entityId, moduleId, recordRules);
+  }
+  
+  // Función para guardar el acceso a menús
+  function saveMenuAccess() {
+    const entityType = document.getElementById('permission-entity-type').value;
+    const entityId = document.getElementById('permission-entity').value;
+    const moduleId = document.getElementById('permission-module').value;
+    
+    if (!entityId) {
+      showToast('Selecciona una entidad', 'warning');
+      return;
+    }
+    
+    if (!moduleId) {
+      showToast('Selecciona un módulo', 'warning');
+      return;
+    }
+    
+    // Si no hay cambios, no hacer nada
+    if (!menuAccess || menuAccess.length === 0) {
+      showToast('No hay accesos a menús para guardar', 'info');
+      return;
+    }
+    
+    // Mostrar indicador de carga
+    document.getElementById('save-menu-access-btn').disabled = true;
+    document.getElementById('save-menu-access-btn').innerHTML = '<div class="spinner-small"></div> Guardando...';
+    
+    // Enviar al backend
+    google.script.run
+      .withSuccessHandler(function(result) {
+        document.getElementById('save-menu-access-btn').disabled = false;
+        document.getElementById('save-menu-access-btn').textContent = 'Guardar Cambios';
+        
+        if (result.success) {
+          showToast('Acceso a menús guardado correctamente', 'success');
+        } else {
+          showToast('Error al guardar acceso a menús: ' + result.error, 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        document.getElementById('save-menu-access-btn').disabled = false;
+        document.getElementById('save-menu-access-btn').textContent = 'Guardar Cambios';
+        showToast('Error al guardar acceso a menús: ' + error, 'error');
+      })
+      .saveMenuAccess(odooConfig, entityType, entityId, moduleId, menuAccess);
+  }
+
   // Inicialización
   document.addEventListener('DOMContentLoaded', function() {
     // Cargar configuración guardada
@@ -83,6 +254,16 @@
     document.getElementById('user-group-filter').addEventListener('change', filterUsersAndGroups);
     document.getElementById('module-search').addEventListener('input', filterModules);
     document.getElementById('module-filter').addEventListener('change', filterModules);
+
+    // Añadir el evento para el botón de búsqueda por modelo
+    document.getElementById('search-model-btn').addEventListener('click', searchPermissionsByModel);
+
+    // Añadir evento para buscar al presionar Enter en el campo de búsqueda
+    document.getElementById('model-search-input').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        searchPermissionsByModel();
+      }
+    });
   }
 
   // Conectar a Odoo
@@ -448,6 +629,8 @@ function renderUserGroupDetails(item) {
 
 // Función para cargar los permisos de acceso de un grupo
 function loadGroupAccessRights(groupId) {
+  const container = document.getElementById('group-access-rights');
+  
   google.script.run
     .withSuccessHandler(function(result) {
       const container = document.getElementById('group-access-rights');
@@ -518,6 +701,18 @@ function loadGroupAccessRights(groupId) {
           `;
         });
         
+        // Añadir mensaje de paginación si es necesario
+        if (result.pagination && result.pagination.hasMore) {
+          html += `
+            <div class="pagination-info">
+              <p>Se muestran permisos de ${result.pagination.totalModules} módulos. Hay más módulos disponibles.</p>
+              <button class="btn small" onclick="loadMoreGroupAccessRights(${groupId})">
+                Cargar más permisos
+              </button>
+            </div>
+          `;
+        }
+        
         container.innerHTML = html;
       } else {
         container.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
@@ -532,6 +727,8 @@ function loadGroupAccessRights(groupId) {
 
 // Función para cargar las reglas de registro de un grupo
 function loadGroupRecordRules(groupId) {
+  const container = document.getElementById('group-record-rules');
+  
   google.script.run
     .withSuccessHandler(function(result) {
       const container = document.getElementById('group-record-rules');
@@ -599,6 +796,18 @@ function loadGroupRecordRules(groupId) {
             </div>
           `;
         });
+        
+        // Añadir mensaje de paginación si es necesario
+        if (result.pagination && result.pagination.hasMore) {
+          html += `
+            <div class="pagination-info">
+              <p>Se muestran reglas de ${result.pagination.totalModules} módulos. Hay más módulos disponibles.</p>
+              <button class="btn small" onclick="loadMoreGroupRecordRules(${groupId})">
+                Cargar más reglas
+              </button>
+            </div>
+          `;
+        }
         
         container.innerHTML = html;
       } else {
@@ -757,46 +966,96 @@ function toggleAccordion(id) {
   function renderModules() {
     const listElement = document.getElementById('modules-list');
     const filter = document.getElementById('module-filter').value;
-    const searchTerm = document.getElementById('module-search').value.toLowerCase();
+    const searchTerm = document.getElementById('module-search').value.toLowerCase().trim();
     
     if (!modules || modules.length === 0) {
       listElement.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron módulos</p></div>';
       return;
     }
     
-    let html = '';
+    // Crear el elemento "Ver Todos"
+    let html = `
+      <div id="show-all-modules" class="list-item show-all-item" onclick="resetModuleFilters()">
+        <div class="module-item">
+          <div class="module-name"><strong>Ver Todos los Módulos</strong></div>
+          <div class="module-technical" style="font-size: 0.8em; color: var(--text-muted);">Mostrar todos sin filtros</div>
+        </div>
+      </div>
+    `;
+    
+    let matchCount = 0;
     
     modules.forEach(module => {
       // Aplicar filtros
-      if ((filter === 'installed' && !module.installed) || 
-          (filter === 'app' && !module.application) ||
-          (searchTerm && !module.name.toLowerCase().includes(searchTerm) && 
-           !module.technical_name.toLowerCase().includes(searchTerm))) {
-        return;
+      let matchesSearch = true;
+      if (searchTerm) {
+        matchesSearch = module.name.toLowerCase().includes(searchTerm) || 
+                       module.technical_name.toLowerCase().includes(searchTerm) ||
+                       (module.description && module.description.toLowerCase().includes(searchTerm));
       }
       
-      const isActive = selectedModule && selectedModule.id === module.id;
+      let matchesFilter = filter === 'all' || 
+                         (filter === 'installed' && module.installed) || 
+                         (filter === 'app' && module.application);
       
-      html += `
-        <div class="list-item ${isActive ? 'active' : ''}" 
-             data-id="${module.id}" 
-             onclick="selectModule(${module.id})">
-          <div class="module-item">
-            <div class="module-name">${module.name}</div>
-            <div class="module-technical" style="font-size: 0.8em; color: var(--text-muted);">${module.technical_name}</div>
+      if (matchesSearch && matchesFilter) {
+        matchCount++;
+        const isActive = selectedModule && selectedModule.id === module.id;
+        
+        html += `
+          <div class="list-item ${isActive ? 'active' : ''}" 
+               data-id="${module.id}" 
+               onclick="selectModule(${module.id})">
+            <div class="module-item">
+              <div class="module-name">${module.name}</div>
+              <div class="module-technical" style="font-size: 0.8em; color: var(--text-muted);">${module.technical_name}</div>
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      }
     });
     
-    if (html === '') {
-      listElement.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron resultados</p></div>';
-    } else {
-      listElement.innerHTML = html;
+    if (matchCount === 0 && (searchTerm || filter !== 'all')) {
+      html += '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron resultados para la búsqueda</p></div>';
     }
+    
+    listElement.innerHTML = html;
     
     // Actualizar el selector de módulos en el panel de permisos
     updatePermissionModuleOptions();
+  }
+
+  // Función para actualizar las opciones del selector de módulos en el panel de permisos
+  function updatePermissionModuleOptions() {
+    // Si no estamos en la pestaña de permisos, no hacer nada
+    if (currentTab !== 'permissions') return;
+    
+    // Obtener el valor actual seleccionado
+    const moduleSelect = document.getElementById('permission-module');
+    const currentValue = moduleSelect.value;
+    
+    // Iniciar con la opción "Todos los módulos"
+    moduleSelect.innerHTML = '<option value="all">Todos los módulos</option>';
+    
+    // Solo mostrar módulos instalados
+    const availableModules = modules ? modules.filter(m => m.installed) : [];
+    
+    // Ordenar módulos alfabéticamente por nombre
+    availableModules.sort((a, b) => a.name.localeCompare(b.name));
+    
+    availableModules.forEach(module => {
+      const option = document.createElement('option');
+      option.value = module.id;
+      option.textContent = module.name;
+      moduleSelect.appendChild(option);
+    });
+    
+    // Restaurar el valor seleccionado si existe
+    if (currentValue && moduleSelect.querySelector(`option[value="${currentValue}"]`)) {
+      moduleSelect.value = currentValue;
+    }
+    
+    moduleSelect.disabled = availableModules.length === 0;
   }
 
   // Filtrar módulos
@@ -1299,6 +1558,230 @@ function deleteRecordRule(index) {
 function updateMenuAccess(index, field, value) {
   if (index < 0 || index >= menuAccess.length) return;
   menuAccess[index][field] = value;
+}
+
+// Función para cargar los derechos de acceso de una entidad para un módulo específico
+function loadAccessRights(entityType, entityId, moduleId) {
+  const tableBody = document.querySelector('#access-rights-table tbody');
+  tableBody.innerHTML = '<tr><td colspan="6" class="loading"><div class="spinner"></div><span>Cargando derechos de acceso...</span></td></tr>';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        accessRights = result.data || [];
+        renderAccessRights(result.debug);
+      } else {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="6" class="error">
+              Error: ${result.error || 'No se pudieron cargar los derechos de acceso'}
+            </td>
+          </tr>
+        `;
+        showToast('Error al cargar derechos de acceso: ' + result.error, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="6" class="error">
+            Error: ${error || 'No se pudieron cargar los derechos de acceso'}
+          </td>
+        </tr>
+      `;
+      showToast('Error al cargar derechos de acceso: ' + error, 'error');
+    })
+    .getAccessRights(odooConfig, entityType, entityId, moduleId);
+}
+
+// Función para cargar las reglas de registro de una entidad para un módulo específico
+function loadRecordRules(entityType, entityId, moduleId) {
+  const tableBody = document.querySelector('#record-rules-table tbody');
+  tableBody.innerHTML = '<tr><td colspan="5" class="loading"><div class="spinner"></div><span>Cargando reglas de registro...</span></td></tr>';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        recordRules = result.data || [];
+        renderRecordRules(result.debug);
+      } else {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="5" class="error">
+              Error: ${result.error || 'No se pudieron cargar las reglas de registro'}
+            </td>
+          </tr>
+        `;
+        showToast('Error al cargar reglas de registro: ' + result.error, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="5" class="error">
+            Error: ${error || 'No se pudieron cargar las reglas de registro'}
+          </td>
+        </tr>
+      `;
+      showToast('Error al cargar reglas de registro: ' + error, 'error');
+    })
+    .getRecordRules(odooConfig, entityType, entityId, moduleId);
+}
+
+// Función para cargar el acceso a menús de una entidad para un módulo específico
+function loadMenuAccess(entityType, entityId, moduleId) {
+  const tableBody = document.querySelector('#menu-access-table tbody');
+  tableBody.innerHTML = '<tr><td colspan="2" class="loading"><div class="spinner"></div><span>Cargando acceso a menús...</span></td></tr>';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        menuAccess = result.data || [];
+        renderMenuAccess(result.debug);
+      } else {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="2" class="error">
+              Error: ${result.error || 'No se pudo cargar el acceso a menús'}
+            </td>
+          </tr>
+        `;
+        showToast('Error al cargar acceso a menús: ' + result.error, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="2" class="error">
+            Error: ${error || 'No se pudo cargar el acceso a menús'}
+          </td>
+        </tr>
+      `;
+      showToast('Error al cargar acceso a menús: ' + error, 'error');
+    })
+    .getMenuAccess(odooConfig, entityType, entityId, moduleId);
+}
+
+// Funciones para mostrar todos los permisos, reglas y menús del módulo
+
+// Función para mostrar todos los permisos de un módulo, independientemente de la entidad seleccionada
+function showAllAccessRights() {
+  const moduleId = document.getElementById('permission-module').value;
+  if (!moduleId || moduleId === 'all') {
+    showToast('Selecciona un módulo específico', 'warning');
+    return;
+  }
+  
+  const tableBody = document.querySelector('#access-rights-table tbody');
+  tableBody.innerHTML = '<tr><td colspan="6" class="loading"><div class="spinner"></div><span>Cargando todos los permisos del módulo...</span></td></tr>';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        accessRights = result.data || [];
+        renderAccessRights();
+      } else {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="6" class="error">
+              Error: ${result.error || 'No se pudieron cargar los permisos'}
+            </td>
+          </tr>
+        `;
+        showToast('Error al cargar permisos: ' + result.error, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="6" class="error">
+            Error: ${error || 'No se pudieron cargar los permisos'}
+          </td>
+        </tr>
+      `;
+      showToast('Error al cargar permisos: ' + error, 'error');
+    })
+    .getAllModuleAccessRights(odooConfig, moduleId);
+}
+
+// Función para mostrar todas las reglas de un módulo, independientemente de la entidad seleccionada
+function showAllRecordRules() {
+  const moduleId = document.getElementById('permission-module').value;
+  if (!moduleId || moduleId === 'all') {
+    showToast('Selecciona un módulo específico', 'warning');
+    return;
+  }
+  
+  const tableBody = document.querySelector('#record-rules-table tbody');
+  tableBody.innerHTML = '<tr><td colspan="5" class="loading"><div class="spinner"></div><span>Cargando todas las reglas del módulo...</span></td></tr>';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        recordRules = result.data || [];
+        renderRecordRules();
+      } else {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="5" class="error">
+              Error: ${result.error || 'No se pudieron cargar las reglas'}
+            </td>
+          </tr>
+        `;
+        showToast('Error al cargar reglas: ' + result.error, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="5" class="error">
+            Error: ${error || 'No se pudieron cargar las reglas'}
+          </td>
+        </tr>
+      `;
+      showToast('Error al cargar reglas: ' + error, 'error');
+    })
+    .getAllModuleRecordRules(odooConfig, moduleId);
+}
+
+// Función para mostrar todos los menús de un módulo, independientemente de la entidad seleccionada
+function showAllMenus() {
+  const moduleId = document.getElementById('permission-module').value;
+  if (!moduleId || moduleId === 'all') {
+    showToast('Selecciona un módulo específico', 'warning');
+    return;
+  }
+  
+  const tableBody = document.querySelector('#menu-access-table tbody');
+  tableBody.innerHTML = '<tr><td colspan="2" class="loading"><div class="spinner"></div><span>Cargando todos los menús del módulo...</span></td></tr>';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        menuAccess = result.data || [];
+        renderMenuAccess();
+      } else {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="2" class="error">
+              Error: ${result.error || 'No se pudieron cargar los menús'}
+            </td>
+          </tr>
+        `;
+        showToast('Error al cargar menús: ' + result.error, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="2" class="error">
+            Error: ${error || 'No se pudieron cargar los menús'}
+          </td>
+        </tr>
+      `;
+      showToast('Error al cargar menús: ' + error, 'error');
+    })
+    .getAllModuleMenus(odooConfig, moduleId);
 }
 
 // Modificar la función loadPermissions para manejar la opción "Todos los módulos"
@@ -1941,230 +2424,934 @@ function renderMenuAccess(debugInfo) {
   tableBody.innerHTML = html;
 }
 
-  // Manejar guardado de modal
-  function handleModalSave() {
-    const action = document.getElementById('modal-save').dataset.action;
-    
-    if (action === 'add-access-right') {
-      addAccessRight();
-    } else if (action === 'add-record-rule') {
-      addRecordRule();
-    } else if (action === 'edit-record-rule') {
-      const index = parseInt(document.getElementById('modal-save').dataset.index);
-      saveRecordRuleEdit(index);
-    }
-    
-    closeModal();
+// Manejar guardado de modal
+function handleModalSave() {
+  const action = document.getElementById('modal-save').dataset.action;
+  
+  if (action === 'add-access-right') {
+    addAccessRight();
+  } else if (action === 'add-record-rule') {
+    addRecordRule();
+  } else if (action === 'edit-record-rule') {
+    const index = parseInt(document.getElementById('modal-save').dataset.index);
+    saveRecordRuleEdit(index);
+  } else if (action === 'add-model-permission') {
+    addModelPermission();
+  } else if (action === 'add-model-rule') {
+    addModelRule();
   }
+  
+  closeModal();
+}
 
-  // Añadir derecho de acceso
-  function addAccessRight() {
-    const model = document.getElementById('model-select').value;
-    const permRead = document.getElementById('perm-read').checked;
-    const permWrite = document.getElementById('perm-write').checked;
-    const permCreate = document.getElementById('perm-create').checked;
-    const permUnlink = document.getElementById('perm-unlink').checked;
-    
-    if (!model) {
-      showToast('Selecciona un modelo', 'warning');
-      return;
-    }
-    
-    // Buscar el nombre del modelo
-    const moduleId = document.getElementById('permission-module').value;
-    google.script.run
-      .withSuccessHandler(function(result) {
-        if (result.success) {
-          const models = result.data;
-          const modelInfo = models.find(m => m.model === model);
+// Añadir derecho de acceso
+function addAccessRight() {
+  const model = document.getElementById('model-select').value;
+  const permRead = document.getElementById('perm-read').checked;
+  const permWrite = document.getElementById('perm-write').checked;
+  const permCreate = document.getElementById('perm-create').checked;
+  const permUnlink = document.getElementById('perm-unlink').checked;
+  
+  if (!model) {
+    showToast('Selecciona un modelo', 'warning');
+    return;
+  }
+  
+  // Buscar el nombre del modelo
+  const moduleId = document.getElementById('permission-module').value;
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        const models = result.data;
+        const modelInfo = models.find(m => m.model === model);
+        
+        if (modelInfo) {
+          // Añadir a la lista
+          accessRights.push({
+            id: 'new_' + Date.now(),
+            model: model,
+            model_name: modelInfo.name,
+            perm_read: permRead,
+            perm_write: permWrite,
+            perm_create: permCreate,
+            perm_unlink: permUnlink
+          });
           
-          if (modelInfo) {
-            // Añadir a la lista
-            accessRights.push({
-              id: 'new_' + Date.now(),
-              model: model,
-              model_name: modelInfo.name,
-              perm_read: permRead,
-              perm_write: permWrite,
-              perm_create: permCreate,
-              perm_unlink: permUnlink
-            });
-            
-            renderAccessRights();
-          }
+          renderAccessRights();
         }
-      })
-      .getModuleModels(odooConfig, moduleId);
-  }
+      }
+    })
+    .getModuleModels(odooConfig, moduleId);
+}
 
-  // Añadir regla de registro
-  function addRecordRule() {
-    const name = document.getElementById('rule-name').value;
-    const model = document.getElementById('model-select').value;
-    const domain = document.getElementById('rule-domain').value;
-    const global = document.getElementById('rule-global').checked;
-    
-    if (!name || !model || !domain) {
-      showToast('Completa todos los campos', 'warning');
-      return;
-    }
-    
-    // Buscar el nombre del modelo
-    const moduleId = document.getElementById('permission-module').value;
-    google.script.run
-      .withSuccessHandler(function(result) {
-        if (result.success) {
-          const models = result.data;
-          const modelInfo = models.find(m => m.model === model);
+// Añadir regla de registro
+function addRecordRule() {
+  const name = document.getElementById('rule-name').value;
+  const model = document.getElementById('model-select').value;
+  const domain = document.getElementById('rule-domain').value;
+  const global = document.getElementById('rule-global').checked;
+  
+  if (!name || !model || !domain) {
+    showToast('Completa todos los campos', 'warning');
+    return;
+  }
+  
+  // Buscar el nombre del modelo
+  const moduleId = document.getElementById('permission-module').value;
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        const models = result.data;
+        const modelInfo = models.find(m => m.model === model);
+        
+        if (modelInfo) {
+          // Añadir a la lista
+          recordRules.push({
+            id: 'new_' + Date.now(),
+            name: name,
+            model: model,
+            model_name: modelInfo.name,
+            domain_force: domain,
+            global: global
+          });
           
-          if (modelInfo) {
-            // Añadir a la lista
-            recordRules.push({
-              id: 'new_' + Date.now(),
-              name: name,
-              model: model,
-              model_name: modelInfo.name,
-              domain_force: domain,
-              global: global
-            });
-            
-            renderRecordRules();
-          }
+          renderRecordRules();
         }
-      })
-      .getModuleModels(odooConfig, moduleId);
-  }
+      }
+    })
+    .getModuleModels(odooConfig, moduleId);
+}
 
-  // Guardar edición de regla de registro
-  function saveRecordRuleEdit(index) {
-    if (index < 0 || index >= recordRules.length) return;
-    
-    const name = document.getElementById('rule-name').value;
-    const domain = document.getElementById('rule-domain').value;
-    const global = document.getElementById('rule-global').checked;
-    
-    if (!name || !domain) {
-      showToast('Completa todos los campos', 'warning');
-      return;
-    }
-    
-    recordRules[index].name = name;
-    recordRules[index].domain_force = domain;
-    recordRules[index].global = global;
-    
-    renderRecordRules();
+// Guardar edición de regla de registro
+function saveRecordRuleEdit(index) {
+  if (index < 0 || index >= recordRules.length) return;
+  
+  const name = document.getElementById('rule-name').value;
+  const domain = document.getElementById('rule-domain').value;
+  const global = document.getElementById('rule-global').checked;
+  
+  if (!name || !domain) {
+    showToast('Completa todos los campos', 'warning');
+    return;
   }
+  
+  recordRules[index].name = name;
+  recordRules[index].domain_force = domain;
+  recordRules[index].global = global;
+  
+  renderRecordRules();
+}
 
-  // Abrir modal
-  function openModal() {
-    document.getElementById('edit-modal').style.display = 'block';
+// Abrir modal
+function openModal() {
+  document.getElementById('edit-modal').style.display = 'block';
+}
+
+// Cerrar modal
+function closeModal() {
+  document.getElementById('edit-modal').style.display = 'none';
+}
+
+// Mostrar toast
+function showToast(message, type = 'info') {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = 'toast show ' + type;
+  
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 3000);
+}
+
+// Modificar la función loadModules para inicializar correctamente la lista
+function loadModules() {
+  const listElement = document.getElementById('modules-list');
+  listElement.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando módulos...</span></div>';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        modules = result.data;
+        renderModules();
+      } else {
+        listElement.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+        showToast('Error al cargar módulos: ' + result.error, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      listElement.innerHTML = '<div class="error">Error: ' + error + '</div>';
+      showToast('Error al cargar módulos: ' + error, 'error');
+    })
+    .getOdooModules(odooConfig);
+}
+
+// Modificar la función renderModules para incluir la opción "Ver Todos"
+function renderModules() {
+  const listElement = document.getElementById('modules-list');
+  const filter = document.getElementById('module-filter').value;
+  const searchTerm = document.getElementById('module-search').value.toLowerCase().trim();
+  
+  if (!modules || modules.length === 0) {
+    listElement.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron módulos</p></div>';
+    return;
   }
-
-  // Cerrar modal
-  function closeModal() {
-    document.getElementById('edit-modal').style.display = 'none';
-  }
-
-  // Mostrar toast
-  function showToast(message, type = 'info') {
-    const toast = document.getElementById('toast');
-    toast.textContent = message;
-    toast.className = 'toast show ' + type;
-    
-    setTimeout(() => {
-      toast.classList.remove('show');
-    }, 3000);
-  }
-
-  // Modificar la función loadModules para inicializar correctamente la lista
-  function loadModules() {
-    const listElement = document.getElementById('modules-list');
-    listElement.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando módulos...</span></div>';
-    
-    google.script.run
-      .withSuccessHandler(function(result) {
-        if (result.success) {
-          modules = result.data;
-          renderModules();
-        } else {
-          listElement.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
-          showToast('Error al cargar módulos: ' + result.error, 'error');
-        }
-      })
-      .withFailureHandler(function(error) {
-        listElement.innerHTML = '<div class="error">Error: ' + error + '</div>';
-        showToast('Error al cargar módulos: ' + error, 'error');
-      })
-      .getOdooModules(odooConfig);
-  }
-
-  // Modificar la función renderModules para incluir la opción "Ver Todos"
-  function renderModules() {
-    const listElement = document.getElementById('modules-list');
-    const filter = document.getElementById('module-filter').value;
-    const searchTerm = document.getElementById('module-search').value.toLowerCase().trim();
-    
-    if (!modules || modules.length === 0) {
-      listElement.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron módulos</p></div>';
-      return;
-    }
-    
-    // Crear el elemento "Ver Todos"
-    let html = `
-      <div id="show-all-modules" class="list-item show-all-item" onclick="resetModuleFilters()">
-        <div class="module-item">
-          <div class="module-name"><strong>Ver Todos los Módulos</strong></div>
-          <div class="module-technical" style="font-size: 0.8em; color: var(--text-muted);">Mostrar todos sin filtros</div>
-        </div>
+  
+  // Crear el elemento "Ver Todos"
+  let html = `
+    <div id="show-all-modules" class="list-item show-all-item" onclick="resetModuleFilters()">
+      <div class="module-item">
+        <div class="module-name"><strong>Ver Todos los Módulos</strong></div>
+        <div class="module-technical" style="font-size: 0.8em; color: var(--text-muted);">Mostrar todos sin filtros</div>
       </div>
-    `;
-    
-    let matchCount = 0;
-    
-    modules.forEach(module => {
-      // Aplicar filtros
-      let matchesSearch = true;
-      if (searchTerm) {
-        matchesSearch = module.name.toLowerCase().includes(searchTerm) || 
+    </div>
+  `;
+  
+  let matchCount = 0;
+  
+  modules.forEach(module => {
+    // Aplicar filtros
+    let matchesSearch = true;
+    if (searchTerm) {
+      matchesSearch = module.name.toLowerCase().includes(searchTerm) || 
                        module.technical_name.toLowerCase().includes(searchTerm) ||
                        (module.description && module.description.toLowerCase().includes(searchTerm));
-      }
-      
-      let matchesFilter = filter === 'all' || 
-                         (filter === 'installed' && module.installed) || 
-                         (filter === 'app' && module.application);
-      
-      if (matchesSearch && matchesFilter) {
-        matchCount++;
-        const isActive = selectedModule && selectedModule.id === module.id;
-        
-        html += `
-          <div class="list-item ${isActive ? 'active' : ''}" 
-               data-id="${module.id}" 
-               onclick="selectModule(${module.id})">
-            <div class="module-item">
-              <div class="module-name">${module.name}</div>
-              <div class="module-technical" style="font-size: 0.8em; color: var(--text-muted);">${module.technical_name}</div>
-            </div>
-          </div>
-        `;
-      }
-    });
-    
-    if (matchCount === 0 && (searchTerm || filter !== 'all')) {
-      html += '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron resultados para la búsqueda</p></div>';
     }
     
-    listElement.innerHTML = html;
+    let matchesFilter = filter === 'all' || 
+                       (filter === 'installed' && module.installed) || 
+                       (filter === 'app' && module.application);
     
-    // Actualizar el selector de módulos en el panel de permisos
-    updatePermissionModuleOptions();
+    if (matchesSearch && matchesFilter) {
+      matchCount++;
+      const isActive = selectedModule && selectedModule.id === module.id;
+      
+      html += `
+        <div class="list-item ${isActive ? 'active' : ''}" 
+             data-id="${module.id}" 
+             onclick="selectModule(${module.id})">
+          <div class="module-item">
+            <div class="module-name">${module.name}</div>
+            <div class="module-technical" style="font-size: 0.8em; color: var(--text-muted);">${module.technical_name}</div>
+          </div>
+        </div>
+      `;
+    }
+  });
+  
+  if (matchCount === 0 && (searchTerm || filter !== 'all')) {
+    html += '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron resultados para la búsqueda</p></div>';
   }
+  
+  listElement.innerHTML = html;
+  
+  // Actualizar el selector de módulos en el panel de permisos
+  updatePermissionModuleOptions();
+}
 
-  // Función para resetear los filtros de módulos
-  function resetModuleFilters() {
-    document.getElementById('module-filter').value = 'all';
-    document.getElementById('module-search').value = '';
-    filterModules();
+// Función para resetear los filtros de módulos
+function resetModuleFilters() {
+  document.getElementById('module-filter').value = 'all';
+  document.getElementById('module-search').value = '';
+  filterModules();
+}
+
+// Añadir una nueva función para buscar permisos por modelo
+function searchPermissionsByModel() {
+  const modelName = document.getElementById('model-search-input').value.trim();
+  
+  if (!modelName) {
+    showToast('Ingresa un nombre de modelo para buscar', 'warning');
+    return;
   }
+  
+  const resultsContainer = document.getElementById('model-search-results');
+  resultsContainer.innerHTML = '<div class="loading"><div class="spinner"></div><span>Buscando permisos para el modelo...</span></div>';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        const { models, accessRights, recordRules } = result.data;
+        
+        if (models.length === 0) {
+          resultsContainer.innerHTML = `
+            <div class="placeholder">
+              <i class="placeholder-icon"></i>
+              <p>No se encontraron modelos que coincidan con "${modelName}"</p>
+            </div>
+          `;
+          return;
+        }
+        
+        let html = `
+          <div class="search-results-header">
+            <h3>Resultados para "${modelName}"</h3>
+            <div class="badge badge-primary">${models.length} modelo(s) encontrado(s)</div>
+          </div>
+        `;
+        
+        // Mostrar modelos encontrados
+        html += `
+          <div class="detail-section">
+            <div class="detail-section-title">Modelos</div>
+            <ul class="models-list" style="list-style-type: none; padding: 0;">
+        `;
+        
+        models.forEach(model => {
+          html += `
+            <li style="padding: 8px; margin-bottom: 5px; background-color: var(--light-gray); border-radius: var(--border-radius);">
+              <strong>${model.name}</strong> <span style="color: var(--text-muted);">(${model.model})</span>
+            </li>
+          `;
+        });
+        
+        html += `
+            </ul>
+          </div>
+        `;
+        
+        // Mostrar permisos de acceso
+        if (accessRights.length > 0) {
+          html += `
+            <div class="detail-section">
+              <div class="detail-section-title">Permisos de Acceso (${accessRights.length})</div>
+              <table class="permissions-table">
+                <thead>
+                  <tr>
+                    <th>Modelo</th>
+                    <th>Grupo</th>
+                    <th>Leer</th>
+                    <th>Escribir</th>
+                    <th>Crear</th>
+                    <th>Eliminar</th>
+                  </tr>
+                </thead>
+                <tbody>
+          `;
+          
+          accessRights.forEach(right => {
+            html += `
+              <tr>
+                <td>${right.model_name} <span style="color: var(--text-muted); font-size: 0.9em;">(${right.model})</span></td>
+                <td>${right.group_name || 'Global'}</td>
+                <td class="checkbox-cell"><input type="checkbox" ${right.perm_read ? 'checked' : ''} disabled></td>
+                <td class="checkbox-cell"><input type="checkbox" ${right.perm_write ? 'checked' : ''} disabled></td>
+                <td class="checkbox-cell"><input type="checkbox" ${right.perm_create ? 'checked' : ''} disabled></td>
+                <td class="checkbox-cell"><input type="checkbox" ${right.perm_unlink ? 'checked' : ''} disabled></td>
+              </tr>
+            `;
+          });
+          
+          html += `
+                </tbody>
+              </table>
+            </div>
+          `;
+        } else {
+          html += `
+            <div class="detail-section">
+              <div class="detail-section-title">Permisos de Acceso</div>
+              <div class="placeholder">
+                <p>No se encontraron permisos de acceso para este modelo</p>
+              </div>
+            </div>
+          `;
+        }
+        
+        // Mostrar reglas de registro
+        if (recordRules.length > 0) {
+          html += `
+            <div class="detail-section">
+              <div class="detail-section-title">Reglas de Registro (${recordRules.length})</div>
+              <table class="permissions-table">
+                <thead>
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Modelo</th>
+                    <th>Dominio</th>
+                    <th>Global</th>
+                    <th>Grupos</th>
+                  </tr>
+                </thead>
+                <tbody>
+          `;
+          
+          recordRules.forEach(rule => {
+            html += `
+              <tr>
+                <td>${rule.name}</td>
+                <td>${rule.model_name} <span style="color: var(--text-muted); font-size: 0.9em;">(${rule.model})</span></td>
+                <td title="${rule.domain_force}">${rule.domain_force.substring(0, 30)}${rule.domain_force.length > 30 ? '...' : ''}</td>
+                <td class="checkbox-cell"><input type="checkbox" ${rule.global ? 'checked' : ''} disabled></td>
+                <td>${rule.group_names ? rule.group_names.join(', ') : 'Ninguno'}</td>
+              </tr>
+            `;
+          });
+          
+          html += `
+                </tbody>
+              </table>
+            </div>
+          `;
+        } else {
+          html += `
+            <div class="detail-section">
+              <div class="detail-section-title">Reglas de Registro</div>
+              <div class="placeholder">
+                <p>No se encontraron reglas de registro para este modelo</p>
+              </div>
+            </div>
+          `;
+        }
+        
+        // Añadir botones para modificar permisos
+        html += `
+          <div class="button-group" style="margin-top: 20px;">
+            <button class="btn primary" onclick="showAddPermissionForModelModal('${models[0].model}')">
+              <i class="add-icon"></i>
+              Añadir Permiso
+            </button>
+            <button class="btn secondary" onclick="showAddRuleForModelModal('${models[0].model}')">
+              <i class="add-icon"></i>
+              Añadir Regla
+            </button>
+          </div>
+        `;
+        
+        resultsContainer.innerHTML = html;
+      } else {
+        resultsContainer.innerHTML = `
+          <div class="error-message">
+            Error al buscar permisos: ${result.error || 'Error desconocido'}
+          </div>
+        `;
+        showToast('Error al buscar permisos: ' + result.error, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      resultsContainer.innerHTML = `
+        <div class="error-message">
+          Error al buscar permisos: ${error || 'Error desconocido'}
+        </div>
+      `;
+      showToast('Error al buscar permisos: ' + error, 'error');
+    })
+    .searchPermissionsByModel(odooConfig, modelName);
+}
+
+// Función para mostrar el modal de añadir permiso para un modelo específico
+function showAddPermissionForModelModal(modelTechName) {
+  // Obtener información del modelo
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success && result.data && result.data.length > 0) {
+        const model = result.data[0];
+        
+        // Obtener grupos disponibles
+        google.script.run
+          .withSuccessHandler(function(groupsResult) {
+            if (groupsResult.success && groupsResult.data) {
+              const groups = groupsResult.data.filter(item => item.type === 'group');
+              
+              // Crear contenido del modal
+              let modalContent = `
+                <div class="form-group">
+                  <label>Modelo:</label>
+                  <div style="padding: 10px; background-color: var(--light-gray); border-radius: var(--border-radius);">
+                    ${model.name} (${model.model})
+                  </div>
+                  <input type="hidden" id="model-id" value="${model.id}">
+                  <input type="hidden" id="model-tech-name" value="${model.model}">
+                </div>
+                
+                <div class="form-group">
+                  <label for="group-select">Grupo:</label>
+                  <select id="group-select" required>
+                    <option value="">Global (Todos los usuarios)</option>
+              `;
+              
+              // Agrupar grupos por categoría
+              const groupsByCategory = {};
+              groups.forEach(group => {
+                const category = group.category || 'Sin categoría';
+                if (!groupsByCategory[category]) {
+                  groupsByCategory[category] = [];
+                }
+                groupsByCategory[category].push(group);
+              });
+              
+              // Añadir grupos agrupados por categoría
+              Object.keys(groupsByCategory).sort().forEach(category => {
+                modalContent += `<optgroup label="${category}">`;
+                groupsByCategory[category].forEach(group => {
+                  modalContent += `<option value="${group.id}">${group.name}</option>`;
+                });
+                modalContent += `</optgroup>`;
+              });
+              
+              modalContent += `
+                  </select>
+                </div>
+                
+                <div class="form-group">
+                  <label>Permisos:</label>
+                  <div style="display: flex; gap: 15px; margin-top: 10px;">
+                    <div>
+                      <input type="checkbox" id="perm-read" checked>
+                      <label for="perm-read">Leer</label>
+                    </div>
+                    <div>
+                      <input type="checkbox" id="perm-write">
+                      <label for="perm-write">Escribir</label>
+                    </div>
+                    <div>
+                      <input type="checkbox" id="perm-create">
+                      <label for="perm-create">Crear</label>
+                    </div>
+                    <div>
+                      <input type="checkbox" id="perm-unlink">
+                      <label for="perm-unlink">Eliminar</label>
+                    </div>
+                  </div>
+                </div>
+              `;
+              
+              // Configurar modal
+              document.getElementById('modal-title').textContent = 'Añadir Permiso para ' + model.name;
+              document.getElementById('modal-body').innerHTML = modalContent;
+              document.getElementById('modal-save').dataset.action = 'add-model-permission';
+              
+              // Mostrar modal
+              openModal();
+            } else {
+              showToast('Error al cargar grupos: ' + (groupsResult.error || 'Error desconocido'), 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            showToast('Error al cargar grupos: ' + error, 'error');
+          })
+          .getOdooUsersAndGroups(odooConfig);
+      } else {
+        showToast('Error al cargar información del modelo', 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showToast('Error al cargar información del modelo: ' + error, 'error');
+    })
+    .getModelByTechName(odooConfig, modelTechName);
+}
+
+// Función para mostrar el modal de añadir regla para un modelo específico
+function showAddRuleForModelModal(modelTechName) {
+  // Obtener información del modelo
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success && result.data && result.data.length > 0) {
+        const model = result.data[0];
+        
+        // Obtener grupos disponibles
+        google.script.run
+          .withSuccessHandler(function(groupsResult) {
+            if (groupsResult.success && groupsResult.data) {
+              const groups = groupsResult.data.filter(item => item.type === 'group');
+              
+              // Crear contenido del modal
+              let modalContent = `
+                <div class="form-group">
+                  <label for="rule-name">Nombre de la regla:</label>
+                  <input type="text" id="rule-name" required placeholder="Ej: regla_acceso_propio_usuario">
+                </div>
+                
+                <div class="form-group">
+                  <label>Modelo:</label>
+                  <div style="padding: 10px; background-color: var(--light-gray); border-radius: var(--border-radius);">
+                    ${model.name} (${model.model})
+                  </div>
+                  <input type="hidden" id="model-id" value="${model.id}">
+                  <input type="hidden" id="model-tech-name" value="${model.model}">
+                </div>
+                
+                <div class="form-group">
+                  <label for="rule-domain">Dominio (filtro):</label>
+                  <textarea id="rule-domain" class="domain-editor" placeholder="Ej: [('user_id', '=', user.id)]"></textarea>
+                  <small style="color: var(--text-muted);">Expresión Python que define el filtro de registros</small>
+                </div>
+                
+                <div class="form-group">
+                  <div>
+                    <input type="checkbox" id="rule-global">
+                    <label for="rule-global">Regla global (aplica a todos los usuarios)</label>
+                  </div>
+                </div>
+                
+                <div class="form-group" id="groups-container" style="display: block;">
+                  <label>Grupos aplicables:</label>
+                  <div class="checkbox-group" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); padding: 10px; border-radius: var(--border-radius);">
+              `;
+              
+              // Agrupar grupos por categoría
+              const groupsByCategory = {};
+              groups.forEach(group => {
+                const category = group.category || 'Sin categoría';
+                if (!groupsByCategory[category]) {
+                  groupsByCategory[category] = [];
+                }
+                groupsByCategory[category].push(group);
+              });
+              
+              // Añadir grupos agrupados por categoría
+              Object.keys(groupsByCategory).sort().forEach(category => {
+                modalContent += `<div class="checkbox-category"><strong>${category}</strong></div>`;
+                groupsByCategory[category].forEach(group => {
+                  modalContent += `
+                    <div class="checkbox-item">
+                      <input type="checkbox" id="group-${group.id}" name="groups" value="${group.id}">
+                      <label for="group-${group.id}">${group.name}</label>
+                    </div>
+                  `;
+                });
+              });
+              
+              modalContent += `
+                  </div>
+                </div>
+              `;
+              
+              // Configurar modal
+              document.getElementById('modal-title').textContent = 'Añadir Regla para ' + model.name;
+              document.getElementById('modal-body').innerHTML = modalContent;
+              document.getElementById('modal-save').dataset.action = 'add-model-rule';
+              
+              // Añadir evento para mostrar/ocultar grupos según si es global
+              document.getElementById('rule-global').addEventListener('change', function() {
+                document.getElementById('groups-container').style.display = this.checked ? 'none' : 'block';
+              });
+              
+              // Mostrar modal
+              openModal();
+            } else {
+              showToast('Error al cargar grupos: ' + (groupsResult.error || 'Error desconocido'), 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            showToast('Error al cargar grupos: ' + error, 'error');
+          })
+          .getOdooUsersAndGroups(odooConfig);
+      } else {
+        showToast('Error al cargar información del modelo', 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showToast('Error al cargar información del modelo: ' + error, 'error');
+    })
+    .getModelByTechName(odooConfig, modelTechName);
+}
+
+// Modificar la función handleModalSave para manejar los nuevos tipos de acciones
+function handleModalSave() {
+  const action = document.getElementById('modal-save').dataset.action;
+  
+  if (action === 'add-access-right') {
+    addAccessRight();
+  } else if (action === 'add-record-rule') {
+    addRecordRule();
+  } else if (action === 'edit-record-rule') {
+    const index = parseInt(document.getElementById('modal-save').dataset.index);
+    saveRecordRuleEdit(index);
+  } else if (action === 'add-model-permission') {
+    addModelPermission();
+  } else if (action === 'add-model-rule') {
+    addModelRule();
+  }
+  
+  closeModal();
+}
+
+// Función para añadir un permiso a un modelo específico
+function addModelPermission() {
+  const modelId = document.getElementById('model-id').value;
+  const modelTechName = document.getElementById('model-tech-name').value;
+  const groupId = document.getElementById('group-select').value;
+  const permRead = document.getElementById('perm-read').checked;
+  const permWrite = document.getElementById('perm-write').checked;
+  const permCreate = document.getElementById('perm-create').checked;
+  const permUnlink = document.getElementById('perm-unlink').checked;
+  
+  if (!modelId || !modelTechName) {
+    showToast('Error: Información del modelo incompleta', 'error');
+    return;
+  }
+  
+  // Crear el permiso
+  const permissionData = {
+    model_id: parseInt(modelId),
+    model: modelTechName,
+    group_id: groupId ? parseInt(groupId) : false,
+    perm_read: permRead,
+    perm_write: permWrite,
+    perm_create: permCreate,
+    perm_unlink: permUnlink
+  };
+  
+  // Mostrar indicador de carga
+  document.getElementById('modal-save').disabled = true;
+  document.getElementById('modal-save').innerHTML = '<div class="spinner-small"></div> Guardando...';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        showToast('Permiso añadido correctamente', 'success');
+        
+        // Actualizar la búsqueda para mostrar el nuevo permiso
+        searchPermissionsByModel();
+      } else {
+        showToast('Error al añadir permiso: ' + result.error, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showToast('Error al añadir permiso: ' + error, 'error');
+    })
+    .addModelPermission(odooConfig, permissionData);
+}
+
+// Función para añadir una regla a un modelo específico
+function addModelRule() {
+  const name = document.getElementById('rule-name').value;
+  const modelId = document.getElementById('model-id').value;
+  const modelTechName = document.getElementById('model-tech-name').value;
+  const domain = document.getElementById('rule-domain').value;
+  const global = document.getElementById('rule-global').checked;
+  
+  if (!name || !modelId || !modelTechName || !domain) {
+    showToast('Completa todos los campos obligatorios', 'warning');
+    return;
+  }
+  
+  // Obtener grupos seleccionados si no es global
+  let groups = [];
+  if (!global) {
+    document.querySelectorAll('input[name="groups"]:checked').forEach(checkbox => {
+      groups.push(parseInt(checkbox.value));
+    });
+  }
+  
+  // Crear la regla
+  const ruleData = {
+    name: name,
+    model_id: parseInt(modelId),
+    model: modelTechName,
+    domain_force: domain,
+    global: global,
+    groups: groups
+  };
+  
+  // Mostrar indicador de carga
+  document.getElementById('modal-save').disabled = true;
+  document.getElementById('modal-save').innerHTML = '<div class="spinner-small"></div> Guardando...';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        showToast('Regla añadida correctamente', 'success');
+        
+        // Actualizar la búsqueda para mostrar la nueva regla
+        searchPermissionsByModel();
+      } else {
+        showToast('Error al añadir regla: ' + result.error, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showToast('Error al añadir regla: ' + error, 'error');
+    })
+    .addModelRule(odooConfig, ruleData);
+}
+
+// Modificar la función loadGroupAccessRights para manejar la paginación
+function loadGroupAccessRights(groupId) {
+  const container = document.getElementById('group-access-rights');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando permisos de acceso...</span></div>';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        const accessRights = result.data;
+        
+        if (accessRights.length === 0) {
+          container.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este grupo no tiene permisos de acceso específicos</p></div>';
+          return;
+        }
+        
+        // Agrupar permisos por módulo
+        const moduleGroups = {};
+        accessRights.forEach(right => {
+          const moduleName = right.module_name || 'Sin módulo';
+          if (!moduleGroups[moduleName]) {
+            moduleGroups[moduleName] = [];
+          }
+          moduleGroups[moduleName].push(right);
+        });
+        
+        let html = '';
+        
+        // Crear acordeones para cada módulo
+        Object.keys(moduleGroups).sort().forEach(moduleName => {
+          const moduleRights = moduleGroups[moduleName];
+          const moduleId = 'module-' + moduleName.replace(/\s+/g, '-').toLowerCase();
+          
+          html += `
+            <div class="accordion-item">
+              <div class="accordion-header" onclick="toggleAccordion('${moduleId}')">
+                <span class="accordion-title">${moduleName}</span>
+                <span class="accordion-count badge badge-light">${moduleRights.length}</span>
+                <span class="accordion-icon">▼</span>
+              </div>
+              <div id="${moduleId}" class="accordion-content" style="display: none;">
+                <table class="permissions-table">
+                  <thead>
+                    <tr>
+                      <th>Modelo</th>
+                      <th>Leer</th>
+                      <th>Escribir</th>
+                      <th>Crear</th>
+                      <th>Eliminar</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+          `;
+          
+          moduleRights.forEach(right => {
+            html += `
+              <tr>
+                <td>${right.model_name} <span style="color: var(--text-muted); font-size: 0.9em;">(${right.model})</span></td>
+                <td class="checkbox-cell"><input type="checkbox" ${right.perm_read ? 'checked' : ''} disabled></td>
+                <td class="checkbox-cell"><input type="checkbox" ${right.perm_write ? 'checked' : ''} disabled></td>
+                <td class="checkbox-cell"><input type="checkbox" ${right.perm_create ? 'checked' : ''} disabled></td>
+                <td class="checkbox-cell"><input type="checkbox" ${right.perm_unlink ? 'checked' : ''} disabled></td>
+              </tr>
+            `;
+          });
+          
+          html += `
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        });
+        
+        // Añadir mensaje de paginación si es necesario
+        if (result.pagination && result.pagination.hasMore) {
+          html += `
+            <div class="pagination-info">
+              <p>Se muestran permisos de ${result.pagination.totalModules} módulos. Hay más módulos disponibles.</p>
+              <button class="btn small" onclick="loadMoreGroupAccessRights(${groupId})">
+                Cargar más permisos
+              </button>
+            </div>
+          `;
+        }
+        
+        container.innerHTML = html;
+      } else {
+        container.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+      }
+    })
+    .withFailureHandler(function(error) {
+      container.innerHTML = '<div class="error">Error: ' + error + '</div>';
+    })
+    .getGroupAccessRights(odooConfig, groupId);
+}
+
+// Modificar la función loadGroupRecordRules para manejar la paginación
+function loadGroupRecordRules(groupId) {
+  const container = document.getElementById('group-record-rules');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando reglas de registro...</span></div>';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        const recordRules = result.data;
+        
+        if (recordRules.length === 0) {
+          container.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este grupo no tiene reglas de registro específicas</p></div>';
+          return;
+        }
+        
+        // Agrupar reglas por módulo
+        const moduleGroups = {};
+        recordRules.forEach(rule => {
+          const moduleName = rule.module_name || 'Sin módulo';
+          if (!moduleGroups[moduleName]) {
+            moduleGroups[moduleName] = [];
+          }
+          moduleGroups[moduleName].push(rule);
+        });
+        
+        let html = '';
+        
+        // Crear acordeones para cada módulo
+        Object.keys(moduleGroups).sort().forEach(moduleName => {
+          const moduleRules = moduleGroups[moduleName];
+          const moduleId = 'rules-module-' + moduleName.replace(/\s+/g, '-').toLowerCase();
+          
+          html += `
+            <div class="accordion-item">
+              <div class="accordion-header" onclick="toggleAccordion('${moduleId}')">
+                <span class="accordion-title">${moduleName}</span>
+                <span class="accordion-count badge badge-light">${moduleRules.length}</span>
+                <span class="accordion-icon">▼</span>
+              </div>
+              <div id="${moduleId}" class="accordion-content" style="display: none;">
+                <table class="permissions-table">
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th>Modelo</th>
+                      <th>Dominio</th>
+                      <th>Global</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+          `;
+          
+          moduleRules.forEach(rule => {
+            html += `
+              <tr>
+                <td>${rule.name}</td>
+                <td>${rule.model_name} <span style="color: var(--text-muted); font-size: 0.9em;">(${rule.model})</span></td>
+                <td title="${rule.domain_force}">${rule.domain_force.substring(0, 30)}${rule.domain_force.length > 30 ? '...' : ''}</td>
+                <td class="checkbox-cell"><input type="checkbox" ${rule.global ? 'checked' : ''} disabled></td>
+              </tr>
+            `;
+          });
+          
+          html += `
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        });
+        
+        // Añadir mensaje de paginación si es necesario
+        if (result.pagination && result.pagination.hasMore) {
+          html += `
+            <div class="pagination-info">
+              <p>Se muestran reglas de ${result.pagination.totalModules} módulos. Hay más módulos disponibles.</p>
+              <button class="btn small" onclick="loadMoreGroupRecordRules(${groupId})">
+                Cargar más reglas
+              </button>
+            </div>
+          `;
+        }
+        
+        container.innerHTML = html;
+      } else {
+        container.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+      }
+    })
+    .withFailureHandler(function(error) {
+      container.innerHTML = '<div class="error">Error: ' + error + '</div>';
+    })
+    .getGroupRecordRules(odooConfig, groupId);
+}
 </script>

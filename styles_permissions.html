@@ -1,0 +1,109 @@
+<style>
+  /* Estilos específicos para la sección de permisos */
+  
+  /* Contenedor principal de permisos */
+  .permissions-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  
+  .permissions-header {
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 1rem;
+  }
+  
+  .permissions-tabs {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  
+  .permissions-content {
+    flex: 1;
+    overflow: auto;
+  }
+  
+  /* Controles de permisos */
+  .permission-controls {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+  
+  /* Tablas de permisos */
+  .permissions-table-container {
+    overflow-x: auto;
+  }
+  
+  .permissions-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  
+  .permissions-table th,
+  .permissions-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .permissions-table th {
+    background-color: var(--light-gray);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  
+  .permissions-table tbody tr:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+  }
+  
+  /* Permisos específicos */
+  .model-name {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  .domain-content {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: monospace;
+    font-size: 0.85rem;
+  }
+  
+  .module-column {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+  
+  .module-header {
+    background-color: var(--light-gray);
+  }
+  
+  .module-header td {
+    font-weight: 600;
+    padding: 0.5rem 0.75rem;
+  }
+  
+  .menu-item td {
+    padding-left: 1.5rem;
+  }
+  
+  .actions {
+    font-size: 0.85rem;
+  }
+  
+  /* Estados de permisos */
+  .no-data-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
+  }
+</style>

@@ -1,0 +1,143 @@
+<style>
+  /* Estilos específicos para la sección de usuarios y grupos */
+  
+  /* Lista de usuarios y grupos */
+  .user-group-item {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .user-group-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: var(--medium-gray);
+    margin-right: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  
+  .user-avatar {
+    background-color: var(--secondary-light);
+    color: white;
+  }
+  
+  .group-avatar {
+    background-color: var(--primary-light);
+    color: white;
+  }
+  
+  .user-group-details {
+    flex: 1;
+  }
+  
+  .user-group-name {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+  
+  .user-group-info {
+    display: flex;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+  
+  .user-group-type {
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--border-radius-sm);
+    margin-right: 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+  
+  .user-type {
+    background-color: var(--secondary-light);
+    color: white;
+  }
+  
+  .group-type {
+    background-color: var(--primary-light);
+    color: white;
+  }
+  
+  .user-login {
+    font-family: monospace;
+  }
+  
+  /* Detalles de usuario/grupo */
+  .user-detail-header, 
+  .group-detail-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+  
+  .user-detail-avatar,
+  .group-detail-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background-color: var(--medium-gray);
+    margin-right: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 1.5rem;
+    color: white;
+  }
+  
+  .user-detail-avatar {
+    background-color: var(--secondary-color);
+  }
+  
+  .group-detail-avatar {
+    background-color: var(--primary-color);
+  }
+  
+  .user-detail-title,
+  .group-detail-title {
+    flex: 1;
+  }
+  
+  .user-detail-name,
+  .group-detail-name {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+  
+  .user-groups-list,
+  .group-users-list {
+    margin-top: 1rem;
+    list-style: none;
+    padding: 0;
+  }
+  
+  .user-groups-list li,
+  .group-users-list li {
+    padding: 0.5rem;
+    background-color: var(--light-gray);
+    margin-bottom: 0.5rem;
+    border-radius: var(--border-radius-sm);
+    display: flex;
+    align-items: center;
+  }
+  
+  .user-groups-list li:before,
+  .group-users-list li:before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--primary-color);
+    margin-right: 0.5rem;
+  }
+</style>

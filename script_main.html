@@ -1,0 +1,237 @@
+<script>
+  // Variables globales
+  let odooConfig = {};
+  let currentTab = 'users-groups';
+  let currentPermissionTab = 'access-rights';
+  let selectedUserGroup = null;
+  let selectedModule = null;
+  let usersAndGroups = [];
+  let modules = [];
+  let accessRights = [];
+  let recordRules = [];
+  let menuAccess = [];
+
+  // Inicialización
+  document.addEventListener('DOMContentLoaded', function() {
+    setupEventListeners();
+  });
+
+  // Cargar configuración guardada
+  function loadSavedConfig(config) {
+    if (config) {
+      odooConfig = config;
+      
+      // Actualizar UI
+      document.getElementById('connection-indicator').classList.remove('disconnected');
+      document.getElementById('connection-indicator').classList.add('connected');
+      document.getElementById('connection-text').textContent = 'Conectado a ' + config.url;
+      
+      // Mostrar panel principal
+      document.getElementById('config-panel').style.display = 'none';
+      document.getElementById('main-content').style.display = 'block';
+      
+      // Cargar datos
+      loadUsersAndGroups();
+      loadModules();
+    }
+    
+    // Actualizar campos
+    document.getElementById('odoo-url').value = config.url || '';
+    document.getElementById('odoo-db').value = config.db || '';
+    document.getElementById('odoo-username').value = config.username || '';
+    document.getElementById('odoo-password').value = config.password || '';
+    
+    // Si tenemos todos los datos, intentamos conectar automáticamente
+    if (config.url && config.db && config.username && config.password) {
+      connectToOdoo();
+    }
+  }
+
+  // Configurar listeners de eventos
+  function setupEventListeners() {
+    // Botones de conexión
+    document.getElementById('connect-btn').addEventListener('click', connectToOdoo);
+    document.getElementById('save-config-btn').addEventListener('click', saveOdooConfig);
+    
+    // Tabs principales
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        switchTab(this.dataset.tab);
+      });
+    });
+    
+    // Filtros de permisos
+    document.getElementById('permission-entity-type').addEventListener('change', updatePermissionEntityFilter);
+    document.getElementById('permission-entity').addEventListener('change', loadPermissions);
+    document.getElementById('permission-module').addEventListener('change', loadPermissions);
+    
+    // Filtro de usuarios y grupos
+    document.getElementById('user-group-search').addEventListener('input', filterUsersAndGroups);
+    document.getElementById('user-group-filter').addEventListener('change', filterUsersAndGroups);
+    
+    // Botón de actualizar usuarios
+    document.getElementById('refresh-users-btn').addEventListener('click', loadUsersAndGroups);
+    
+    // Filtro de módulos
+    document.getElementById('module-search').addEventListener('input', filterModules);
+    document.getElementById('module-filter').addEventListener('change', filterModules);
+    
+    // Botón de actualizar módulos
+    document.getElementById('refresh-modules-btn').addEventListener('click', loadModules);
+    
+    // Inicializar selectores de pestaña de permisos
+    const entityTypeSelect = document.getElementById('permission-entity-type');
+    entityTypeSelect.innerHTML = `
+      <option value="user">Usuario</option>
+      <option value="group">Grupo</option>
+    `;
+    
+    // Cerrar modal
+    document.querySelector('.close-modal').addEventListener('click', closeModal);
+    document.getElementById('modal-cancel').addEventListener('click', closeModal);
+    document.getElementById('modal-save').addEventListener('click', handleModalSave);
+    
+    // Botón de búsqueda por modelo
+    document.getElementById('search-model-btn').addEventListener('click', searchPermissionsByModel);
+    
+    // Cargar configuración guardada
+    google.script.run
+      .withSuccessHandler(loadSavedConfig)
+      .getOdooConfig();
+  }
+
+  // Conectar a Odoo
+  function connectToOdoo() {
+    const url = document.getElementById('odoo-url').value.trim();
+    const db = document.getElementById('odoo-db').value.trim();
+    const username = document.getElementById('odoo-username').value.trim();
+    const password = document.getElementById('odoo-password').value.trim();
+    
+    if (!url || !db || !username || !password) {
+      showToast('Por favor, completa todos los campos', 'warning');
+      return;
+    }
+    
+    // Mostrar indicador de carga
+    document.getElementById('connect-btn').disabled = true;
+    document.getElementById('connect-btn').innerHTML = '<div class="spinner-small"></div> Conectando...';
+    
+    const config = {
+      url: url,
+      db: db,
+      username: username,
+      password: password
+    };
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        document.getElementById('connect-btn').disabled = false;
+        document.getElementById('connect-btn').textContent = 'Conectar';
+        
+        if (result.success) {
+          // Guardar configuración
+          odooConfig = config;
+          
+          // Actualizar UI
+          document.getElementById('connection-indicator').classList.remove('disconnected');
+          document.getElementById('connection-indicator').classList.add('connected');
+          document.getElementById('connection-text').textContent = 'Conectado a ' + url;
+          
+          // Mostrar panel principal
+          document.getElementById('config-panel').style.display = 'none';
+          document.getElementById('main-content').style.display = 'block';
+          
+          // Cargar datos
+          loadUsersAndGroups();
+          loadModules();
+          
+          showToast('Conexión exitosa', 'success');
+        } else {
+          showToast('Error de conexión: ' + result.error, 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        document.getElementById('connect-btn').disabled = false;
+        document.getElementById('connect-btn').textContent = 'Conectar';
+        showToast('Error de conexión: ' + error, 'error');
+      })
+      .testOdooConnection(config);
+  }
+
+  // Guardar configuración de Odoo
+  function saveOdooConfig() {
+    const url = document.getElementById('odoo-url').value.trim();
+    const db = document.getElementById('odoo-db').value.trim();
+    const username = document.getElementById('odoo-username').value.trim();
+    const password = document.getElementById('odoo-password').value.trim();
+    
+    if (!url || !db || !username || !password) {
+      showToast('Por favor, completa todos los campos', 'warning');
+      return;
+    }
+    
+    const config = {
+      url: url,
+      db: db,
+      username: username,
+      password: password
+    };
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result) {
+          showToast('Configuración guardada correctamente', 'success');
+        } else {
+          showToast('Error al guardar la configuración', 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        showToast('Error al guardar: ' + error, 'error');
+      })
+      .saveOdooConfig(config);
+  }
+
+  // Cambiar de tab principal
+  function switchTab(tabId) {
+    // Actualizar botones de tab
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === tabId);
+    });
+    
+    // Actualizar paneles de tab
+    document.querySelectorAll('.tab-pane').forEach(pane => {
+      pane.classList.toggle('active', pane.id === tabId);
+    });
+    
+    // Actualizar tab actual
+    currentTab = tabId;
+    
+    // Cargar datos específicos
+    if (tabId === 'permissions') {
+      updatePermissionEntityFilter();
+      updatePermissionModuleOptions();
+    } else if (tabId === 'model-search') {
+      // Preparar la interfaz de búsqueda por modelo
+      const searchBox = document.querySelector('#model-search .search-box');
+      if (!searchBox.querySelector('input')) {
+        searchBox.innerHTML = `
+          <i class="search-icon"></i>
+          <input type="text" id="model-search-input" placeholder="Buscar por nombre de modelo (ej: res.partner, account.invoice)..." />
+        `;
+      }
+    }
+  }
+
+  // Mostrar toast
+  function showToast(message, type = 'info') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = 'toast';
+    toast.classList.add(type);
+    toast.classList.add('show');
+    
+    setTimeout(() => {
+      toast.classList.remove('show');
+    }, 3000);
+  }
+</script>

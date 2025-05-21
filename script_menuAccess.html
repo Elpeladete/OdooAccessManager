@@ -1,0 +1,224 @@
+<script>
+  // Variables para acceso a menús
+  let menuAccess = [];
+
+  // Carga los accesos a menús para una entidad y módulo
+  function loadMenuAccess(entityType, entityId, moduleId) {
+    // Actualizar estado de los botones
+    updatePermissionButtons('menu-access', true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          menuAccess = result.data;
+          renderMenuAccess();
+        } else {
+          const tableBody = document.querySelector('#menu-access tbody');
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="2" class="error">Error: ${result.error}</td>
+            </tr>
+          `;
+          showToast('Error al cargar acceso a menús: ' + result.error, 'error');
+        }
+        
+        // Actualizar estado de los botones
+        updatePermissionButtons('menu-access', false, menuAccess.length > 0);
+      })
+      .withFailureHandler(function(error) {
+        const tableBody = document.querySelector('#menu-access tbody');
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="2" class="error">Error: ${error}</td>
+          </tr>
+        `;
+        showToast('Error al cargar acceso a menús: ' + error, 'error');
+        
+        // Actualizar estado de los botones
+        updatePermissionButtons('menu-access', false, false);
+      })
+      .getMenuAccess(odooConfig, {
+        entityType: entityType,
+        entityId: entityId,
+        moduleId: moduleId
+      });
+  }
+
+  // Renderiza la tabla de acceso a menús
+  function renderMenuAccess() {
+    const tableBody = document.querySelector('#menu-access tbody');
+    
+    if (!menuAccess || menuAccess.length === 0) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="2" class="placeholder">
+            <div class="no-data-message">
+              <i class="placeholder-icon"></i>
+              <p>No se encontraron accesos a menús</p>
+            </div>
+          </td>
+        </tr>
+      `;
+      return;
+    }
+    
+    // Agrupar menús por módulo
+    const menusByModule = {};
+    
+    menuAccess.forEach(menu => {
+      if (!menusByModule[menu.module_id]) {
+        const moduleInfo = modules.find(m => m.id === menu.module_id) || { name: 'Desconocido' };
+        menusByModule[menu.module_id] = {
+          moduleName: moduleInfo.name,
+          menus: []
+        };
+      }
+      
+      menusByModule[menu.module_id].menus.push(menu);
+    });
+    
+    let html = '';
+    
+    // Generar filas para cada módulo y sus menús
+    Object.keys(menusByModule).forEach(moduleId => {
+      const moduleData = menusByModule[moduleId];
+      
+      html += `
+        <tr class="module-header">
+          <td colspan="2" class="module-name">${moduleData.moduleName}</td>
+        </tr>
+      `;
+      
+      // Ordenar menús por nombre
+      moduleData.menus.sort((a, b) => a.name.localeCompare(b.name));
+      
+      moduleData.menus.forEach(menu => {
+        html += `
+          <tr data-id="${menu.id}" class="menu-item">
+            <td class="menu-name">${menu.name}</td>
+            <td class="text-center">
+              <div class="permission-switch">
+                <input type="checkbox" id="menu-${menu.id}" class="permission-toggle menu-access" 
+                       ${menu.has_access ? 'checked' : ''}>
+                <label for="menu-${menu.id}" class="switch-label"></label>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+    });
+    
+    tableBody.innerHTML = html;
+    
+    // Agregar event listeners para cambios en los checkboxes
+    tableBody.querySelectorAll('.permission-toggle').forEach(toggle => {
+      toggle.addEventListener('change', function() {
+        const row = this.closest('tr');
+        const menuId = row.dataset.id;
+        
+        updateMenuAccess(menuId, this.checked);
+      });
+    });
+  }
+
+  // Actualiza el acceso a un menú específico
+  function updateMenuAccess(menuId, hasAccess) {
+    const entityType = document.getElementById('permission-entity-type').value;
+    const entityId = document.getElementById('permission-entity').value;
+    
+    // Desactivar todos los checkboxes mientras se guarda
+    const checkboxes = document.querySelectorAll('.permission-toggle');
+    checkboxes.forEach(cb => cb.disabled = true);
+    
+    // Mostrar indicador de carga
+    showToast('Guardando cambios...', 'info', 0);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          // Actualizar el objeto en memoria
+          const menu = menuAccess.find(m => m.id === menuId);
+          if (menu) {
+            menu.has_access = hasAccess;
+          }
+          
+          showToast('Acceso a menú actualizado correctamente', 'success');
+        } else {
+          showToast('Error al guardar acceso a menú: ' + result.error, 'error');
+          
+          // Revertir cambio en la UI
+          const checkbox = document.querySelector(`tr[data-id="${menuId}"] .menu-access`);
+          if (checkbox) {
+            checkbox.checked = !hasAccess;
+          }
+        }
+        
+        // Reactivar checkboxes
+        checkboxes.forEach(cb => cb.disabled = false);
+      })
+      .withFailureHandler(function(error) {
+        showToast('Error al guardar acceso a menú: ' + error, 'error');
+        
+        // Revertir cambio en la UI
+        const checkbox = document.querySelector(`tr[data-id="${menuId}"] .menu-access`);
+        if (checkbox) {
+          checkbox.checked = !hasAccess;
+        }
+        
+        // Reactivar checkboxes
+        checkboxes.forEach(cb => cb.disabled = false);
+      })
+      .updateMenuAccess(odooConfig, {
+        entityType: entityType,
+        entityId: entityId,
+        menuId: menuId,
+        hasAccess: hasAccess
+      });
+  }
+
+  // Guarda todos los accesos a menús
+  function saveMenuAccess() {
+    const entityType = document.getElementById('permission-entity-type').value;
+    const entityId = document.getElementById('permission-entity').value;
+    const moduleId = document.getElementById('permission-module').value;
+    
+    if (!entityId || !moduleId || moduleId === 'all') {
+      showToast('Por favor, selecciona un usuario/grupo y un módulo específico', 'warning');
+      return;
+    }
+    
+    // Recopilar datos de todos los checkboxes
+    const permissions = [];
+    menuAccess.forEach(menu => {
+      permissions.push({
+        id: menu.id,
+        has_access: menu.has_access
+      });
+    });
+    
+    // Desactivar botón y mostrar progreso
+    updatePermissionButtons('menu-access', true);
+    showToast('Guardando accesos a menús...', 'info', 0);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          showToast('Accesos a menús guardados correctamente', 'success');
+        } else {
+          showToast('Error al guardar accesos a menús: ' + result.error, 'error');
+        }
+        
+        updatePermissionButtons('menu-access', false, true);
+      })
+      .withFailureHandler(function(error) {
+        showToast('Error al guardar accesos a menús: ' + error, 'error');
+        updatePermissionButtons('menu-access', false, true);
+      })
+      .saveMenuAccess(odooConfig, {
+        entityType: entityType,
+        entityId: entityId,
+        moduleId: moduleId,
+        permissions: permissions
+      });
+  }
+</script>

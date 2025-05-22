@@ -1,15 +1,6 @@
 <script>
-  // Variables globales
-  let odooConfig = {};
-  let currentTab = 'users-groups';
-  let currentPermissionTab = 'access-rights';
-  let selectedUserGroup = null;
-  let selectedModule = null;
-  let usersAndGroups = [];
-  let modules = [];
-  let accessRights = [];
-  let recordRules = [];
-  let menuAccess = [];
+  // No declaramos variables globales aquí, ya están declaradas en script_main.html
+  // Usamos las variables declaradas en script_main.html: odooConfig, currentTab, etc.
 
   // Función para actualizar las opciones del selector de módulos en el panel de permisos
   function updatePermissionModuleOptions() {
@@ -450,54 +441,19 @@
   }
 
   // Filtrar usuarios y grupos
+  // Función para filtrar usuarios y grupos (usa la implementación global)
+  // Esta función simplemente redirige a la implementación en script_globalHelpers.html
   function filterUsersAndGroups() {
-    const listElement = document.getElementById('users-groups-list');
-    const filter = document.getElementById('user-group-filter').value;
-    const searchTerm = document.getElementById('user-group-search').value.toLowerCase().trim();
-    
-    if (!usersAndGroups || usersAndGroups.length === 0) {
-      listElement.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron usuarios o grupos</p></div>';
-      return;
-    }
-    
-    let html = '';
-    let matchCount = 0;
-    
-    usersAndGroups.forEach(item => {
-      // Aplicar filtros
-      let matchesSearch = true;
-      if (searchTerm) {
-        matchesSearch = item.name.toLowerCase().includes(searchTerm) || 
-                       (item.login && item.login.toLowerCase().includes(searchTerm)) ||
-                       (item.email && item.email.toLowerCase().includes(searchTerm));
-      }
-      
-      let matchesFilter = filter === 'all' || 
-                         (filter === 'users' && item.type === 'user') || 
-                         (filter === 'groups' && item.type === 'group');
-      
-      if (matchesSearch && matchesFilter) {
-        matchCount++;
-        const isActive = selectedUserGroup && selectedUserGroup.id === item.id && selectedUserGroup.type === item.type;
-        
-        html += `
-          <div class="list-item ${isActive ? 'active' : ''}" 
-               data-id="${item.id}" 
-               data-type="${item.type}" 
-               onclick="selectUserGroup(${item.id}, '${item.type}')">
-            <div class="user-group-item">
-              <div class="user-group-icon">${item.type === 'user' ? 'U' : 'G'}</div>
-              <div class="user-group-name">${item.name}</div>
-            </div>
-          </div>
-        `;
-      }
-    });
-    
-    if (matchCount === 0) {
-      listElement.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron resultados para la búsqueda</p></div>';
+    if (typeof window.filterUsersAndGroups === 'function') {
+      window.filterUsersAndGroups();
     } else {
-      listElement.innerHTML = html;
+      console.error('La función global filterUsersAndGroups no está disponible');
+      
+      // Implementación de respaldo
+      const listElement = document.getElementById('users-groups-list');
+      if (listElement) {
+        listElement.innerHTML = '<div class="error">Error: La función de filtrado no está disponible</div>';
+      }
     }
   }
 
@@ -950,27 +906,8 @@ function toggleAccordion(id) {
       .getGroupImpliedIds(odooConfig, groupId);
   }
 
-  // Cargar módulos
-  function loadModules() {
-    const listElement = document.getElementById('modules-list');
-    listElement.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando módulos...</span></div>';
-    
-    google.script.run
-      .withSuccessHandler(function(result) {
-        if (result.success) {
-          modules = result.data;
-          renderModules();
-        } else {
-          listElement.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
-          showToast('Error al cargar módulos: ' + result.error, 'error');
-        }
-      })
-      .withFailureHandler(function(error) {
-        listElement.innerHTML = '<div class="error">Error: ' + error + '</div>';
-        showToast('Error al cargar módulos: ' + error, 'error');
-      })
-      .getOdooModules(odooConfig);
-  }
+  // Referencia a la función loadModules definida en script_modules.html
+  // (La función original se ha movido a script_modules.html para evitar duplicación)
 
   // Renderizar lista de módulos
   function renderModules() {
@@ -2563,37 +2500,20 @@ function closeModal() {
 }
 
 // Mostrar toast
-function showToast(message, type = 'info') {
-  const toast = document.getElementById('toast');
-  toast.textContent = message;
-  toast.className = 'toast show ' + type;
+// Función para mostrar mensajes Toast (delegación a la función global)
+function showToast(message, type = 'info', duration = 3000) {
+  // Verificar si la función ya existe en el contexto global
+  if (typeof window.showToast === 'function') {
+    window.showToast(message, type, duration);
+    return;
+  }
   
-  setTimeout(() => {
-    toast.classList.remove('show');
-  }, 3000);
+  // Implementación simplificada de respaldo
+  console.log(`[TOAST] ${type.toUpperCase()}: ${message}`);
 }
 
-// Modificar la función loadModules para inicializar correctamente la lista
-function loadModules() {
-  const listElement = document.getElementById('modules-list');
-  listElement.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando módulos...</span></div>';
-  
-  google.script.run
-    .withSuccessHandler(function(result) {
-      if (result.success) {
-        modules = result.data;
-        renderModules();
-      } else {
-        listElement.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
-        showToast('Error al cargar módulos: ' + result.error, 'error');
-      }
-    })
-    .withFailureHandler(function(error) {
-      listElement.innerHTML = '<div class="error">Error: ' + error + '</div>';
-      showToast('Error al cargar módulos: ' + error, 'error');
-    })
-    .getOdooModules(odooConfig);
-}
+// Referencia a la función loadModules que está definida en script_modules.html
+// No se define aquí para evitar duplicación
 
 // Modificar la función renderModules para incluir la opción "Ver Todos"
 function renderModules() {

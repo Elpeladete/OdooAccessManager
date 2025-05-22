@@ -18,49 +18,91 @@
 
   // Función para mostrar un mensaje toast
   function showToast(message, type = 'info', duration = 3000) {
-    const toastContainer = document.getElementById('toast-container') || createToastContainer();
-    
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.innerHTML = message;
-    
-    toastContainer.appendChild(toast);
-    
-    // Mostrar el toast
-    setTimeout(() => {
-      toast.classList.add('show');
-    }, 10);
-    
-    // Ocultar después del tiempo especificado (0 para mantenerlo hasta que sea cerrado)
-    if (duration > 0) {
+    try {
+      // Hacer que esté disponible globalmente
+      if (typeof window.showToast !== 'function') {
+        window.showToast = showToast;
+      }
+      
+      // Si el DOM no está listo, esperar e intentar nuevamente
+      if (!document.body) {
+        console.log(`[TOAST-QUEUED] ${type.toUpperCase()}: ${message}`);
+        document.addEventListener('DOMContentLoaded', function() {
+          showToast(message, type, duration);
+        });
+        return null;
+      }
+      
+      const toastContainer = document.getElementById('toast-container') || createToastContainer();
+      
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.innerHTML = message;
+      
+      toastContainer.appendChild(toast);
+      
+      // Mostrar el toast
       setTimeout(() => {
-        toast.classList.remove('show');
+        toast.classList.add('show');
+      }, 10);
+      
+      // Ocultar después del tiempo especificado (0 para mantenerlo hasta que sea cerrado)
+      if (duration > 0) {
         setTimeout(() => {
-          toast.remove();
-        }, 300); // Esperar a que termine la animación
-      }, duration);
-    } else {
-      // Si duration es 0, agregar botón para cerrar
-      const closeBtn = document.createElement('span');
-      closeBtn.className = 'toast-close';
-      closeBtn.innerHTML = '&times;';
-      closeBtn.addEventListener('click', () => {
-        toast.classList.remove('show');
-        setTimeout(() => {
-          toast.remove();
-        }, 300);
-      });
-      toast.appendChild(closeBtn);
+          toast.classList.remove('show');
+          setTimeout(() => {
+            if (toast.parentNode) {
+              toast.parentNode.removeChild(toast);
+            }
+          }, 300); // Esperar a que termine la animación
+        }, duration);
+      } else {
+        // Si duration es 0, agregar botón para cerrar
+        const closeBtn = document.createElement('span');
+        closeBtn.className = 'toast-close';
+        closeBtn.innerHTML = '&times;';
+        closeBtn.addEventListener('click', () => {
+          toast.classList.remove('show');
+          setTimeout(() => {
+            if (toast.parentNode) {
+              toast.parentNode.removeChild(toast);
+            }
+          }, 300);
+        });
+        toast.appendChild(closeBtn);
+      }
+      
+      return toast;
+    } catch (error) {
+      // Fallback para casos extremos
+      console.error('Error mostrando toast:', error);
+      console.log(`[TOAST-FALLBACK] ${type.toUpperCase()}: ${message}`);
+      return null;
     }
-    
-    return toast;
   }
 
   // Crea el contenedor de toasts si no existe
   function createToastContainer() {
-    const container = document.createElement('div');
+    // Verificar si ya existe
+    let container = document.getElementById('toast-container');
+    if (container) {
+      return container;
+    }
+    
+    // Crear nuevo contenedor
+    container = document.createElement('div');
     container.id = 'toast-container';
-    document.body.appendChild(container);
+    
+    // Verificar que el body esté disponible
+    if (document.body) {
+      document.body.appendChild(container);
+    } else {
+      // Si el body aún no está disponible, esperar a que el DOM esté listo
+      document.addEventListener('DOMContentLoaded', function() {
+        document.body.appendChild(container);
+      });
+    }
+    
     return container;
   }
   

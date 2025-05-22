@@ -41,7 +41,7 @@
           </div>
           <div class="form-group">
             <label for="odoo-password">Contraseña:</label>
-            <input type="password" id="odoo-password" />
+            <input type="password" id="odoo-password" autocomplete="current-password" />
           </div>
         </form>
         <div class="button-group">
@@ -342,6 +342,8 @@
     <!-- Scripts -->
     <?!= include('script_globalHelpers'); ?>
     <?!= include('script_ui'); ?>
+    <?!= include('script_main'); ?>
+    <?!= include('script'); ?>
     <?!= include('script_users'); ?>
     <?!= include('script_modules'); ?>
     <?!= include('script_permissions'); ?>
@@ -349,6 +351,5 @@
     <?!= include('script_recordRules'); ?>
     <?!= include('script_menuAccess'); ?>
     <?!= include('script_model_search'); ?>
-    <?!= include('script_main'); ?>
   </body>
 </html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Toast</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+    }
+    
+    .toast {
+      padding: 12px 20px;
+      margin-bottom: 10px;
+      border-radius: 5px;
+      color: white;
+      opacity: 0;
+      transition: opacity 0.3s;
+      max-width: 300px;
+    }
+    
+    .toast.show {
+      opacity: 1;
+    }
+    
+    .toast.info {
+      background-color: #2196F3;
+    }
+    
+    .toast.success {
+      background-color: #4CAF50;
+    }
+    
+    .toast.warning {
+      background-color: #FF9800;
+    }
+    
+    .toast.error {
+      background-color: #F44336;
+    }
+    
+    button {
+      padding: 8px 16px;
+      margin-right: 10px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>Test de función showToast</h1>
+  
+  <div>
+    <button onclick="testToast('info')">Toast Info</button>
+    <button onclick="testToast('success')">Toast Success</button>
+    <button onclick="testToast('warning')">Toast Warning</button>
+    <button onclick="testToast('error')">Toast Error</button>
+  </div>
+  
+  <script>
+    // Función para mostrar un mensaje toast
+    function showToast(message, type = 'info', duration = 3000) {
+      try {
+        // Hacer que esté disponible globalmente
+        if (typeof window.showToast !== 'function') {
+          window.showToast = showToast;
+        }
+        
+        // Si el DOM no está listo, esperar e intentar nuevamente
+        if (!document.body) {
+          console.log(`[TOAST-QUEUED] ${type.toUpperCase()}: ${message}`);
+          document.addEventListener('DOMContentLoaded', function() {
+            showToast(message, type, duration);
+          });
+          return null;
+        }
+        
+        const toastContainer = document.getElementById('toast-container') || createToastContainer();
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.innerHTML = message;
+        
+        toastContainer.appendChild(toast);
+        
+        // Mostrar el toast
+        setTimeout(() => {
+          toast.classList.add('show');
+        }, 10);
+        
+        // Ocultar después del tiempo especificado (0 para mantenerlo hasta que sea cerrado)
+        if (duration > 0) {
+          setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+              toastContainer.removeChild(toast);
+            }, 300);
+          }, duration);
+        }
+        
+        return toast;
+      } catch (error) {
+        console.error('Error en showToast:', error);
+        // Fallback para asegurar que al menos se muestre el mensaje
+        alert(`${type.toUpperCase()}: ${message}`);
+        return null;
+      }
+    }
+    
+    // Función para crear el contenedor de toasts
+    function createToastContainer() {
+      const container = document.createElement('div');
+      container.id = 'toast-container';
+      container.className = 'toast-container';
+      
+      // Intentar añadir al body
+      if (document.body) {
+        document.body.appendChild(container);
+      } else {
+        // Si el body aún no está disponible, esperar a que el DOM esté listo
+        document.addEventListener('DOMContentLoaded', function() {
+          document.body.appendChild(container);
+        });
+      }
+      
+      return container;
+    }
+    
+    // Función para probar los toasts
+    function testToast(type) {
+      showToast(`Este es un mensaje de tipo ${type}`, type, 3000);
+    }
+    
+    // Mostrar un toast al cargar la página
+    document.addEventListener('DOMContentLoaded', function() {
+      showToast('La página se ha cargado correctamente', 'success');
+    });
+  </script>
+</body>
+</html>

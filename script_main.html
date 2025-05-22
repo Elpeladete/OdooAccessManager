@@ -89,17 +89,6 @@
       })
       .getOdooConfig();
   }
-      'loadUsersAndGroups', 'renderUsersAndGroups', 'loadModules', 
-      'switchTab', 'closeModal', 'searchPermissionsByModel'
-    ];
-    
-    const missingFunctions = requiredFunctions.filter(fn => typeof window[fn] !== 'function');
-    
-    if (missingFunctions.length > 0) {
-      console.error('Faltan funciones requeridas:', missingFunctions);
-      showToast('Algunas funciones no están disponibles. Funcionalidad limitada.', 'warning', 5000);
-    }
-  });
 
   // Cargar configuración guardada
   function loadSavedConfig(config) {

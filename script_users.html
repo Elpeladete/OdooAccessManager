@@ -136,14 +136,14 @@
   }
 
   // Filtrar usuarios y grupos
-  function filterUsersAndGroups() {
+  function filterUsersAndGroupsImpl() {
     logDebug('Filtrando usuarios y grupos desde script_users.html');
     renderUsersAndGroups();
   }
   
   // Asegurar que la función esté disponible globalmente
   if (typeof window.filterUsersAndGroups !== 'function') {
-    window.filterUsersAndGroups = filterUsersAndGroups;
+    window.filterUsersAndGroups = filterUsersAndGroupsImpl;
     logDebug('Función filterUsersAndGroups registrada globalmente desde script_users.html');
   }
 
@@ -797,7 +797,7 @@
     }
   }
 
-  // Función para mostrar mensajes Toast
+  // Función para mostrar mensajes Toast (delegación a la función global)
   function showToast(message, type = 'info') {
     // Verificar si la función ya existe en el contexto global
     if (typeof window.showToast === 'function') {
@@ -805,43 +805,9 @@
       return;
     }
     
-    // Implementación básica si no existe
-    logDebug('Mostrando toast', { message, type });
-    
-    // Crear elemento toast si no existe
-    let toastContainer = document.getElementById('toast-container');
-    if (!toastContainer) {
-      toastContainer = document.createElement('div');
-      toastContainer.id = 'toast-container';
-      toastContainer.style.position = 'fixed';
-      toastContainer.style.bottom = '20px';
-      toastContainer.style.right = '20px';
-      toastContainer.style.zIndex = '1000';
-      document.body.appendChild(toastContainer);
-    }
-    
-    // Crear toast
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.style.backgroundColor = type === 'error' ? '#f44336' : 
-                                  type === 'warning' ? '#ff9800' : 
-                                  type === 'success' ? '#4caf50' : '#2196f3';
-    toast.style.color = 'white';
-    toast.style.padding = '12px 20px';
-    toast.style.marginBottom = '10px';
-    toast.style.borderRadius = '4px';
-    toast.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
-    toast.textContent = message;
-    
-    // Añadir al contenedor
-    toastContainer.appendChild(toast);
-    
-    // Eliminar después de 5 segundos
-    setTimeout(() => {
-      if (toast.parentNode) {
-        toast.parentNode.removeChild(toast);
-      }
-    }, 5000);
+    // Implementación simplificada de respaldo
+    logDebug('Mostrando toast (implementación de respaldo)', { message, type });
+    console.log(`[TOAST] ${type.toUpperCase()}: ${message}`);
   }
 
   // Función para recuperarse de errores

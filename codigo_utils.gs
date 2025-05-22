@@ -39,6 +39,12 @@ function callOdooAPI(config, model, method, args, kwargs = {}) {
       throw new Error('URL no es un string válido');
     }
     
+    // Validación adicional para URL
+    if (!config.url) {
+      Logger.log('Error: URL es vacía');
+      throw new Error('URL es vacía');
+    }
+    
     const url = config.url.endsWith('/') ? config.url : config.url + '/';
     const xmlrpcUrl = url + 'xmlrpc/2/object';
     Logger.log(`URL para API Odoo: ${xmlrpcUrl}`);
@@ -101,6 +107,12 @@ function getOdooUID(config) {
     if (typeof config.url !== 'string') {
       Logger.log('Error: URL no es un string: ' + typeof config.url);
       throw new Error('URL no es un string válido');
+    }
+    
+    // Validación adicional para URL
+    if (!config.url) {
+      Logger.log('Error: URL es vacía');
+      throw new Error('URL es vacía');
     }
     
     const url = config.url.endsWith('/') ? config.url : config.url + '/';

@@ -250,8 +250,18 @@
     document.getElementById('modal-save').addEventListener('click', handleModalSave);
     
     // Filtros de búsqueda
-    document.getElementById('user-group-search').addEventListener('input', filterUsersAndGroups);
-    document.getElementById('user-group-filter').addEventListener('change', filterUsersAndGroups);
+    if (typeof filterUsersAndGroups === 'function') {
+      document.getElementById('user-group-search').addEventListener('input', filterUsersAndGroups);
+      document.getElementById('user-group-filter').addEventListener('change', filterUsersAndGroups);
+    } else {
+      console.warn('La función filterUsersAndGroups no está disponible');
+      // Definición temporal para evitar errores
+      window.filterUsersAndGroups = function() {
+        console.log('Función filterUsersAndGroups temporal');
+      };
+      document.getElementById('user-group-search').addEventListener('input', window.filterUsersAndGroups);
+      document.getElementById('user-group-filter').addEventListener('change', window.filterUsersAndGroups);
+    }
     document.getElementById('module-search').addEventListener('input', filterModules);
     document.getElementById('module-filter').addEventListener('change', filterModules);
 

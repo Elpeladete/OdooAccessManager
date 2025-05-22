@@ -137,7 +137,14 @@
 
   // Filtrar usuarios y grupos
   function filterUsersAndGroups() {
+    logDebug('Filtrando usuarios y grupos desde script_users.html');
     renderUsersAndGroups();
+  }
+  
+  // Asegurar que la función esté disponible globalmente
+  if (typeof window.filterUsersAndGroups !== 'function') {
+    window.filterUsersAndGroups = filterUsersAndGroups;
+    logDebug('Función filterUsersAndGroups registrada globalmente desde script_users.html');
   }
 
   // Seleccionar usuario o grupo

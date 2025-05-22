@@ -28,17 +28,67 @@
   document.addEventListener('DOMContentLoaded', function() {
     logDebug('DOM cargado completamente');
     
-    // Asegurarnos de que las funciones básicas estén definidas
-    if (typeof setupEventListeners !== 'function') {
-      console.error('La función setupEventListeners no está definida. Verifica el orden de inclusión de scripts.');
-      showToast('Error de inicialización. Por favor recarga la página.', 'error', 0);
-      return;
-    }
-    
-    setupEventListeners();
-    
     // Verificar que todas las funciones clave estén disponibles
     const requiredFunctions = [
+      'setupEventListeners',
+      'loadUsersAndGroups',
+      'renderUsersAndGroups',
+      'filterUsersAndGroups',
+      'selectUserGroup',
+      'loadModules',
+      'loadPermissions'
+    ];
+    
+    const missingFunctions = requiredFunctions.filter(fn => typeof window[fn] !== 'function');
+    
+    if (missingFunctions.length > 0) {
+      console.error('Faltan funciones requeridas:', missingFunctions);
+      
+      // Esperar un poco más para dar tiempo a que todos los scripts se carguen
+      setTimeout(() => {
+        const stillMissingFunctions = requiredFunctions.filter(fn => typeof window[fn] !== 'function');
+        
+        if (stillMissingFunctions.length > 0) {
+          console.error('Aún faltan funciones después de esperar:', stillMissingFunctions);
+          showToast('Error de inicialización. Por favor recarga la página.', 'error', 0);
+        } else {
+          console.log('Todas las funciones disponibles después de esperar, iniciando...');
+          initializeApp();
+        }
+      }, 500); // Esperar 500ms adicionales
+    } else {
+      // Todas las funciones están disponibles, iniciar normalmente
+      initializeApp();
+    }
+  });
+  
+  // Función para inicializar la aplicación
+  function initializeApp() {
+    setupEventListeners();
+    
+    // Cargar configuración guardada
+    google.script.run
+      .withSuccessHandler(function(config) {
+        odooConfig = config;
+        logDebug('Configuración cargada', odooConfig);
+        
+        // Rellenar el formulario con la configuración guardada
+        if (odooConfig.url) document.getElementById('odoo-url').value = odooConfig.url;
+        if (odooConfig.db) document.getElementById('odoo-db').value = odooConfig.db;
+        if (odooConfig.username) document.getElementById('odoo-username').value = odooConfig.username;
+        if (odooConfig.password) document.getElementById('odoo-password').value = odooConfig.password;
+        
+        // Si hay una configuración completa, conectar automáticamente
+        if (odooConfig.url && odooConfig.db && odooConfig.username && odooConfig.password) {
+          connectToOdoo();
+        }
+      })
+      .withFailureHandler(function(error) {
+        logDebug('Error al cargar la configuración', error);
+        showToast('Error al cargar la configuración guardada', 'error');
+      })
+      .getOdooConfig();
+  }
       'loadUsersAndGroups', 'renderUsersAndGroups', 'loadModules', 
       'switchTab', 'closeModal', 'searchPermissionsByModel'
     ];
@@ -102,8 +152,18 @@
     document.getElementById('permission-module').addEventListener('change', loadPermissions);
     
     // Filtro de usuarios y grupos
-    document.getElementById('user-group-search').addEventListener('input', filterUsersAndGroups);
-    document.getElementById('user-group-filter').addEventListener('change', filterUsersAndGroups);
+    if (typeof filterUsersAndGroups === 'function') {
+      document.getElementById('user-group-search').addEventListener('input', filterUsersAndGroups);
+      document.getElementById('user-group-filter').addEventListener('change', filterUsersAndGroups);
+    } else {
+      console.warn('La función filterUsersAndGroups no está disponible. Asegúrate de que script_users.html se carga antes que script_main.html');
+      // Definición temporal para evitar errores
+      window.filterUsersAndGroups = function() {
+        console.log('Función filterUsersAndGroups temporal. La función real se cargará cuando script_users.html esté disponible.');
+      };
+      document.getElementById('user-group-search').addEventListener('input', window.filterUsersAndGroups);
+      document.getElementById('user-group-filter').addEventListener('change', window.filterUsersAndGroups);
+    }
     
     // Botón de actualizar usuarios
     document.getElementById('refresh-users-btn').addEventListener('click', loadUsersAndGroups);

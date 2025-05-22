@@ -1,0 +1,28 @@
+// Función de filtrado para usuarios y grupos
+window.filterUsersAndGroups = function() {
+  console.log('Función global filterUsersAndGroups ejecutándose');
+  if (typeof renderUsersAndGroups === 'function') {
+    renderUsersAndGroups();
+  } else {
+    console.error('La función renderUsersAndGroups no está disponible');
+  }
+};
+
+// Añadir el manejador de eventos una vez que el DOM esté listo
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('Añadiendo manejadores de eventos para filtros de usuarios y grupos');
+  
+  const searchInput = document.getElementById('user-group-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', window.filterUsersAndGroups);
+  } else {
+    console.warn('Elemento user-group-search no encontrado');
+  }
+  
+  const filterSelect = document.getElementById('user-group-filter');
+  if (filterSelect) {
+    filterSelect.addEventListener('change', window.filterUsersAndGroups);
+  } else {
+    console.warn('Elemento user-group-filter no encontrado');
+  }
+});

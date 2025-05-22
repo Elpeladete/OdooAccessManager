@@ -1,0 +1,552 @@
+<!-- filepath: /workspaces/OdooAccessManager/script_users.html -->
+<script>
+  // Cargar usuarios y grupos
+  function loadUsersAndGroups() {
+    const listElement = document.getElementById('users-groups-list');
+    listElement.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando usuarios y grupos...</span></div>';
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          usersAndGroups = result.data;
+          renderUsersAndGroups();
+        } else {
+          listElement.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+          showToast('Error al cargar usuarios y grupos: ' + result.error, 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        listElement.innerHTML = '<div class="error">Error: ' + error + '</div>';
+        showToast('Error al cargar usuarios y grupos: ' + error, 'error');
+      })
+      .getOdooUsersAndGroups(odooConfig);
+  }
+
+  // Renderizar lista de usuarios y grupos
+  function renderUsersAndGroups() {
+    const listElement = document.getElementById('users-groups-list');
+    const filter = document.getElementById('user-group-filter').value;
+    const searchTerm = document.getElementById('user-group-search').value.toLowerCase();
+    
+    // Filtrar según el término de búsqueda y el filtro seleccionado
+    const filteredItems = usersAndGroups.filter(item => {
+      const matchesSearch = item.name.toLowerCase().includes(searchTerm);
+      
+      if (filter === 'all') {
+        return matchesSearch;
+      } else if (filter === 'users') {
+        return item.type === 'user' && matchesSearch;
+      } else if (filter === 'groups') {
+        return item.type === 'group' && matchesSearch;
+      }
+      
+      return false;
+    });
+    
+    if (filteredItems.length === 0) {
+      listElement.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron resultados</p></div>';
+      return;
+    }
+    
+    // Ordenar: primero grupos por categoría, luego usuarios por nombre
+    filteredItems.sort((a, b) => {
+      if (a.type !== b.type) {
+        return a.type === 'group' ? -1 : 1;
+      }
+      
+      if (a.type === 'group') {
+        if (a.category !== b.category) {
+          if (!a.category) return 1;
+          if (!b.category) return -1;
+          return a.category.localeCompare(b.category);
+        }
+      }
+      
+      return a.name.localeCompare(b.name);
+    });
+    
+    // Generar HTML
+    let html = '';
+    let currentCategory = null;
+    
+    filteredItems.forEach(item => {
+      // Añadir encabezado de categoría para grupos
+      if (item.type === 'group' && item.category !== currentCategory) {
+        currentCategory = item.category;
+        html += `<div class="list-category">${currentCategory || 'Sin categoría'}</div>`;
+      }
+      
+      html += `
+        <div class="list-item" onclick="selectUserGroup(${item.id}, '${item.type}')">
+          <div class="user-group-item">
+            <div class="user-group-icon">${item.type === 'user' ? 'U' : 'G'}</div>
+            <div class="user-group-name">
+              ${item.name}
+              ${!item.active && item.type === 'user' ? '<span class="badge badge-warning">Inactivo</span>' : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    
+    listElement.innerHTML = html;
+  }
+
+  // Filtrar usuarios y grupos
+  function filterUsersAndGroups() {
+    renderUsersAndGroups();
+  }
+
+  // Seleccionar usuario o grupo
+  function selectUserGroup(id, type) {
+    // Mostrar indicador de carga
+    const detailElement = document.getElementById('user-group-detail');
+    detailElement.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando detalles...</span></div>';
+    
+    // Resaltar elemento seleccionado
+    document.querySelectorAll('#users-groups-list .list-item').forEach(item => {
+      item.classList.remove('active');
+    });
+    
+    document.querySelectorAll('#users-groups-list .list-item').forEach(item => {
+      if (item.querySelector('.user-group-name').textContent.trim().includes(usersAndGroups.find(i => i.id === id && i.type === type)?.name)) {
+        item.classList.add('active');
+      }
+    });
+    
+    // Guardar selección actual
+    selectedUserGroup = { id, type };
+    
+    // Buscar información del item
+    const item = usersAndGroups.find(i => i.id === id && i.type === type);
+    
+    if (!item) {
+      detailElement.innerHTML = '<div class="error">Error: No se encontró la información</div>';
+      return;
+    }
+    
+    // Renderizar detalles
+    renderUserGroupDetails(item);
+    
+    // Si estamos en la pestaña de permisos, actualizar selección
+    if (currentTab === 'permissions') {
+      document.getElementById('permission-entity-type').value = type;
+      updatePermissionEntityFilter();
+      
+      setTimeout(() => {
+        document.getElementById('permission-entity').value = id;
+        loadPermissions();
+      }, 500);
+    }
+  }
+
+  // Renderizar detalles de usuario o grupo
+  function renderUserGroupDetails(item) {
+    const detailElement = document.getElementById('user-group-detail');
+    
+    let html = `
+      <div class="detail-header">
+        <h3>${item.name}</h3>
+        <div>
+          <span class="badge ${item.type === 'user' ? 'badge-primary' : 'badge-secondary'}">${item.type === 'user' ? 'Usuario' : 'Grupo'}</span>
+          ${item.type === 'group' && item.category ? `<span class="badge badge-light">${item.category}</span>` : ''}
+          ${item.type === 'user' && !item.active ? '<span class="badge badge-warning">Inactivo</span>' : ''}
+        </div>
+      </div>
+      
+      <div class="detail-section">
+        <div class="detail-section-title">Información General</div>
+    `;
+    
+    if (item.type === 'user') {
+      html += `
+        <div class="detail-row">
+          <div class="detail-label">ID</div>
+          <div class="detail-value">${item.id}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Usuario</div>
+          <div class="detail-value">${item.login}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Email</div>
+          <div class="detail-value">${item.email || 'No especificado'}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Estado</div>
+          <div class="detail-value">${item.active ? '<span class="badge badge-success">Activo</span>' : '<span class="badge badge-warning">Inactivo</span>'}</div>
+        </div>
+      </div>
+      
+      <div class="detail-section">
+        <div class="detail-section-title">Grupos</div>
+        <div id="user-groups-list">
+          <div class="loading"><div class="spinner"></div><span>Cargando grupos del usuario...</span></div>
+        </div>
+      `;
+    } else {
+      html += `
+        <div class="detail-row">
+          <div class="detail-label">ID</div>
+          <div class="detail-value">${item.id}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Categoría</div>
+          <div class="detail-value">${item.category || 'Sin categoría'}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Grupos Heredados</div>
+          <div class="detail-value" id="group-implied-ids">
+            <div class="loading"><div class="spinner"></div><span>Cargando...</span></div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="detail-section">
+        <div class="detail-section-title">Usuarios en este Grupo</div>
+        <div id="group-users-list">
+          <div class="loading"><div class="spinner"></div><span>Cargando usuarios del grupo...</span></div>
+        </div>
+      </div>
+      
+      <!-- Nueva sección para permisos del grupo -->
+      <div class="detail-section">
+        <div class="detail-section-title">Permisos de Acceso</div>
+        <div id="group-access-rights">
+          <div class="loading"><div class="spinner"></div><span>Cargando permisos de acceso...</span></div>
+        </div>
+      </div>
+      
+      <!-- Nueva sección para reglas del grupo -->
+      <div class="detail-section">
+        <div class="detail-section-title">Reglas de Registro</div>
+        <div id="group-record-rules">
+          <div class="loading"><div class="spinner"></div><span>Cargando reglas de registro...</span></div>
+        </div>
+      </div>
+    `;
+    
+    // Cargar usuarios del grupo y grupos heredados
+    if (item.type === 'user') {
+      loadUserGroups(item.id);
+    } else {
+      loadGroupUsers(item.id);
+      loadGroupImpliedIds(item.id);
+      
+      // Cargar permisos y reglas del grupo
+      loadGroupAccessRights(item.id);
+      loadGroupRecordRules(item.id);
+    }
+    
+    detailElement.innerHTML = html;
+  }
+
+  // Cargar grupos de un usuario
+  function loadUserGroups(userId) {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        const listElement = document.getElementById('user-groups-list');
+        
+        if (result.success) {
+          const groups = result.data;
+          
+          if (groups.length === 0) {
+            listElement.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este usuario no pertenece a ningún grupo</p></div>';
+            return;
+          }
+          
+          let html = '';
+          groups.forEach(group => {
+            html += `
+              <div class="list-item" onclick="selectUserGroup(${group.id}, 'group')">
+                <div class="user-group-item">
+                  <div class="user-group-icon">G</div>
+                  <div class="user-group-name">${group.name}</div>
+                </div>
+              </div>
+            `;
+          });
+          
+          listElement.innerHTML = html;
+        } else {
+          listElement.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+        }
+      })
+      .withFailureHandler(function(error) {
+        document.getElementById('user-groups-list').innerHTML = 
+          '<div class="error">Error: ' + error + '</div>';
+      })
+      .getUserGroups(odooConfig, userId);
+  }
+
+  // Cargar usuarios de un grupo
+  function loadGroupUsers(groupId) {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        const element = document.getElementById('group-users-list');
+        
+        if (result.success) {
+          const users = result.data;
+          
+          if (users.length === 0) {
+            element.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este grupo no tiene usuarios asignados</p></div>';
+            return;
+          }
+          
+          let html = '<div class="user-badges">';
+          users.forEach(user => {
+            html += `
+              <div class="badge ${user.active ? 'badge-primary' : 'badge-warning'}" 
+                   onclick="selectUserGroup(${user.id}, 'user')" 
+                   style="cursor: pointer; margin: 2px;">
+                ${user.name}
+              </div>
+            `;
+          });
+          html += '</div>';
+          
+          element.innerHTML = html;
+        } else {
+          element.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+        }
+      })
+      .withFailureHandler(function(error) {
+        document.getElementById('group-users-list').innerHTML = 
+          '<div class="error">Error: ' + error + '</div>';
+      })
+      .getGroupUsers(odooConfig, groupId);
+  }
+
+  // Cargar grupos heredados
+  function loadGroupImpliedIds(groupId) {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        const element = document.getElementById('group-implied-ids');
+        
+        if (result.success) {
+          const groups = result.data;
+          
+          if (groups.length === 0) {
+            element.textContent = 'Ninguno';
+            return;
+          }
+          
+          element.innerHTML = groups.map(g => 
+            `<div class="badge badge-light" style="margin: 2px;">${g.name}</div>`
+          ).join(' ');
+        } else {
+          element.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+        }
+      })
+      .withFailureHandler(function(error) {
+        document.getElementById('group-implied-ids').innerHTML = 
+          '<div class="error">Error: ' + error + '</div>';
+      })
+      .getGroupImpliedIds(odooConfig, groupId);
+  }
+
+  // Función para cargar los permisos de acceso de un grupo
+  function loadGroupAccessRights(groupId) {
+    const container = document.getElementById('group-access-rights');
+    container.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando permisos de acceso...</span></div>';
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          const accessRights = result.data;
+          
+          if (accessRights.length === 0) {
+            container.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este grupo no tiene permisos de acceso específicos</p></div>';
+            return;
+          }
+          
+          // Agrupar permisos por módulo
+          const moduleGroups = {};
+          accessRights.forEach(right => {
+            const moduleName = right.module_name || 'Sin módulo';
+            if (!moduleGroups[moduleName]) {
+              moduleGroups[moduleName] = [];
+            }
+            moduleGroups[moduleName].push(right);
+          });
+          
+          let html = '';
+          
+          // Crear acordeones para cada módulo
+          Object.keys(moduleGroups).sort().forEach(moduleName => {
+            const moduleRights = moduleGroups[moduleName];
+            const moduleId = 'module-' + moduleName.replace(/\s+/g, '-').toLowerCase();
+            
+            html += `
+              <div class="accordion-item">
+                <div class="accordion-header" onclick="toggleAccordion('${moduleId}')">
+                  <span class="accordion-title">${moduleName}</span>
+                  <span class="accordion-count badge badge-light">${moduleRights.length}</span>
+                  <span class="accordion-icon">▼</span>
+                </div>
+                <div id="${moduleId}" class="accordion-content" style="display: none;">
+                  <table class="permissions-table">
+                    <thead>
+                      <tr>
+                        <th>Modelo</th>
+                        <th>Leer</th>
+                        <th>Escribir</th>
+                        <th>Crear</th>
+                        <th>Eliminar</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            moduleRights.forEach(right => {
+              html += `
+                <tr>
+                  <td>${right.model_name} (${right.model})</td>
+                  <td class="checkbox-cell">${right.perm_read ? '✓' : '✗'}</td>
+                  <td class="checkbox-cell">${right.perm_write ? '✓' : '✗'}</td>
+                  <td class="checkbox-cell">${right.perm_create ? '✓' : '✗'}</td>
+                  <td class="checkbox-cell">${right.perm_unlink ? '✓' : '✗'}</td>
+                </tr>
+              `;
+            });
+            
+            html += `
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            `;
+          });
+          
+          // Si hay información de paginación y hay más datos disponibles
+          if (result.pagination && result.pagination.hasMore) {
+            html += `
+              <div class="pagination-info" style="margin-top: 10px; text-align: center;">
+                <p>Se muestran permisos de ${result.pagination.totalModules} módulos. Hay más módulos disponibles.</p>
+                <button class="btn small" onclick="loadMoreGroupAccessRights(${groupId})">
+                  Cargar más permisos
+                </button>
+              </div>
+            `;
+          }
+          
+          container.innerHTML = html;
+        } else {
+          container.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+        }
+      })
+      .withFailureHandler(function(error) {
+        container.innerHTML = '<div class="error">Error: ' + error + '</div>';
+      })
+      .getGroupAccessRights(odooConfig, groupId);
+  }
+
+  // Función para cargar las reglas de registro de un grupo
+  function loadGroupRecordRules(groupId) {
+    const container = document.getElementById('group-record-rules');
+    container.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando reglas de registro...</span></div>';
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          const recordRules = result.data;
+          
+          if (recordRules.length === 0) {
+            container.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este grupo no tiene reglas de registro específicas</p></div>';
+            return;
+          }
+          
+          // Agrupar reglas por módulo
+          const moduleGroups = {};
+          recordRules.forEach(rule => {
+            const moduleName = rule.module_name || 'Sin módulo';
+            if (!moduleGroups[moduleName]) {
+              moduleGroups[moduleName] = [];
+            }
+            moduleGroups[moduleName].push(rule);
+          });
+          
+          let html = '';
+          
+          // Crear acordeones para cada módulo
+          Object.keys(moduleGroups).sort().forEach(moduleName => {
+            const moduleRules = moduleGroups[moduleName];
+            const moduleId = 'rules-module-' + moduleName.replace(/\s+/g, '-').toLowerCase();
+            
+            html += `
+              <div class="accordion-item">
+                <div class="accordion-header" onclick="toggleAccordion('${moduleId}')">
+                  <span class="accordion-title">${moduleName}</span>
+                  <span class="accordion-count badge badge-light">${moduleRules.length}</span>
+                  <span class="accordion-icon">▼</span>
+                </div>
+                <div id="${moduleId}" class="accordion-content" style="display: none;">
+                  <table class="permissions-table">
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Modelo</th>
+                        <th>Dominio</th>
+                        <th>Global</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            moduleRules.forEach(rule => {
+              html += `
+                <tr>
+                  <td>${rule.name}</td>
+                  <td>${rule.model_name} (${rule.model})</td>
+                  <td><pre>${rule.domain_force}</pre></td>
+                  <td class="checkbox-cell">${rule.global ? '✓' : '✗'}</td>
+                </tr>
+              `;
+            });
+            
+            html += `
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            `;
+          });
+          
+          // Si hay información de paginación y hay más datos disponibles
+          if (result.pagination && result.pagination.hasMore) {
+            html += `
+              <div class="pagination-info" style="margin-top: 10px; text-align: center;">
+                <p>Se muestran reglas de ${result.pagination.totalModules} módulos. Hay más módulos disponibles.</p>
+                <button class="btn small" onclick="loadMoreGroupRecordRules(${groupId})">
+                  Cargar más reglas
+                </button>
+              </div>
+            `;
+          }
+          
+          container.innerHTML = html;
+        } else {
+          container.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+        }
+      })
+      .withFailureHandler(function(error) {
+        container.innerHTML = '<div class="error">Error: ' + error + '</div>';
+      })
+      .getGroupRecordRules(odooConfig, groupId);
+  }
+
+  // Función para alternar la visibilidad de los acordeones
+  function toggleAccordion(id) {
+    const content = document.getElementById(id);
+    const header = content.previousElementSibling;
+    const icon = header.querySelector('.accordion-icon');
+    
+    if (content.style.display === 'none') {
+      content.style.display = 'block';
+      icon.textContent = '▲';
+    } else {
+      content.style.display = 'none';
+      icon.textContent = '▼';
+    }
+  }
+</script>

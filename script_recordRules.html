@@ -119,57 +119,97 @@
     const moduleName = moduleInfo.name;
     
     const modal = createModal({
-      title: 'Detalles de Regla de Registro',
-      size: 'large',
+      title: `Detalles de Regla: ${rule.name}`,
+      size: 'medium',
       content: `
-        <div class="detail-section">
-          <div class="detail-label">Nombre:</div>
-          <div class="detail-value">${rule.name}</div>
-        </div>
-        
-        <div class="detail-section">
-          <div class="detail-label">Modelo:</div>
-          <div class="detail-value">${rule.model_name} (${rule.model_id})</div>
-        </div>
-        
-        <div class="detail-section">
-          <div class="detail-label">Módulo:</div>
-          <div class="detail-value">${moduleName}</div>
-        </div>
-        
-        <div class="detail-section">
-          <div class="detail-label">Permisos:</div>
-          <div class="detail-value permissions-grid">
-            <div class="permission-item ${rule.perm_read ? 'active' : ''}">Leer</div>
-            <div class="permission-item ${rule.perm_write ? 'active' : ''}">Escribir</div>
-            <div class="permission-item ${rule.perm_create ? 'active' : ''}">Crear</div>
-            <div class="permission-item ${rule.perm_unlink ? 'active' : ''}">Eliminar</div>
+        <div class="rule-detail">
+          <div class="detail-section">
+            <h3>Información Básica</h3>
+            <table class="detail-table">
+              <tr>
+                <th>Nombre:</th>
+                <td>${rule.name}</td>
+              </tr>
+              <tr>
+                <th>Modelo:</th>
+                <td>${rule.model_name}</td>
+              </tr>
+              <tr>
+                <th>Módulo:</th>
+                <td>${moduleName}</td>
+              </tr>
+              <tr>
+                <th>Global:</th>
+                <td>${rule.global ? 'Sí' : 'No'}</td>
+              </tr>
+            </table>
           </div>
-        </div>
-        
-        <div class="detail-section">
-          <div class="detail-label">Dominio:</div>
-          <div class="detail-value code-block">${rule.domain_force || '[]'}</div>
-        </div>
-        
-        <div class="detail-section">
-          <div class="detail-label">Global:</div>
-          <div class="detail-value">${rule.global ? 'Sí' : 'No'}</div>
-        </div>
-        
-        <div class="detail-section">
-          <div class="detail-label">Activo:</div>
-          <div class="detail-value">${rule.active ? 'Sí' : 'No'}</div>
+          
+          <div class="detail-section">
+            <h3>Permisos</h3>
+            <table class="permission-table">
+              <tr>
+                <th>Leer:</th>
+                <td>${rule.perm_read ? 'Sí' : 'No'}</td>
+                <th>Escribir:</th>
+                <td>${rule.perm_write ? 'Sí' : 'No'}</td>
+              </tr>
+              <tr>
+                <th>Crear:</th>
+                <td>${rule.perm_create ? 'Sí' : 'No'}</td>
+                <th>Eliminar:</th>
+                <td>${rule.perm_unlink ? 'Sí' : 'No'}</td>
+              </tr>
+            </table>
+          </div>
+          
+          <div class="detail-section">
+            <h3>Dominio</h3>
+            <pre class="code-block">${rule.domain || '[]'}</pre>
+          </div>
         </div>
       `,
       buttons: [
         {
           text: 'Cerrar',
-          action: 'close'
+          type: 'secondary',
+          onClick: function() {
+            this.close();
+          }
         }
       ]
     });
     
     modal.show();
+  }
+  
+  // Función para alternar la visibilidad de los acordeones (duplicada para asegurar disponibilidad)
+  function toggleAccordion(id) {
+    logDebug('Alternando acordeón en recordRules', { id });
+    const content = document.getElementById(id);
+    if (!content) {
+      logDebug('Elemento acordeón no encontrado', { id });
+      return;
+    }
+    
+    const header = content.previousElementSibling;
+    if (!header) {
+      logDebug('Encabezado de acordeón no encontrado', { id });
+      return;
+    }
+    
+    const icon = header.querySelector('.accordion-icon');
+    if (!icon) {
+      logDebug('Icono de acordeón no encontrado', { id });
+      return;
+    }
+    
+    if (content.style.display === 'none') {
+      content.style.display = 'block';
+      icon.textContent = '▲';
+    } else {
+      content.style.display = 'none';
+      icon.textContent = '▼';
+    }
   }
 </script>

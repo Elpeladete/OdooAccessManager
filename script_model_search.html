@@ -1,0 +1,190 @@
+<script>
+  // Función para buscar permisos por modelo
+  function searchPermissionsByModel() {
+    logDebug('Iniciando búsqueda por modelo');
+    const searchInput = document.getElementById('model-search-input');
+    
+    if (!searchInput) {
+      logDebug('Elemento model-search-input no encontrado');
+      showToast('Error: Elemento de búsqueda no encontrado', 'error');
+      return;
+    }
+    
+    const modelName = searchInput.value.trim();
+    
+    if (!modelName) {
+      showToast('Ingresa un nombre de modelo para buscar', 'warning');
+      return;
+    }
+    
+    const resultsContainer = document.getElementById('model-search-results');
+    if (!resultsContainer) {
+      logDebug('Elemento model-search-results no encontrado');
+      showToast('Error: Contenedor de resultados no encontrado', 'error');
+      return;
+    }
+    
+    resultsContainer.innerHTML = '<div class="loading"><div class="spinner"></div><span>Buscando permisos para el modelo...</span></div>';
+    
+    logDebug('Buscando modelo', { modelName });
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        logDebug('Respuesta recibida de searchPermissionsByModel', { success: result.success });
+        if (result.success) {
+          const { models, accessRights, recordRules } = result.data;
+          
+          if (models.length === 0) {
+            resultsContainer.innerHTML = `
+              <div class="placeholder">
+                <i class="placeholder-icon"></i>
+                <p>No se encontraron modelos que coincidan con "${modelName}"</p>
+              </div>
+            `;
+            return;
+          }
+          
+          // Renderizar resultados
+          renderModelSearchResults(models, accessRights, recordRules);
+        } else {
+          resultsContainer.innerHTML = `
+            <div class="error">
+              <p>Error al buscar permisos: ${result.error || 'Error desconocido'}</p>
+            </div>
+          `;
+          showToast('Error al buscar permisos: ' + result.error, 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        logDebug('Error al buscar permisos por modelo', { error });
+        resultsContainer.innerHTML = `
+          <div class="error">
+            <p>Error al buscar permisos: ${error}</p>
+          </div>
+        `;
+        showToast('Error al buscar permisos: ' + error, 'error');
+      })
+      .searchPermissionsByModel(odooConfig, modelName);
+  }
+
+  // Función para renderizar los resultados de la búsqueda por modelo
+  function renderModelSearchResults(models, accessRights, recordRules) {
+    const resultsContainer = document.getElementById('model-search-results');
+    
+    if (!resultsContainer) {
+      logDebug('Elemento model-search-results no encontrado');
+      return;
+    }
+    
+    let html = `
+      <div class="model-search-results">
+        <div class="section-title">
+          <h4>Modelos encontrados (${models.length})</h4>
+        </div>
+        <div class="models-list">
+    `;
+    
+    // Renderizar lista de modelos
+    models.forEach(model => {
+      html += `
+        <div class="model-item">
+          <div class="model-header">
+            <div class="model-name">${model.name}</div>
+            <div class="model-tech-name">${model.model}</div>
+          </div>
+          <div class="model-module">Módulo: ${model.module_name || 'N/A'}</div>
+        </div>
+      `;
+    });
+    
+    html += `
+        </div>
+    `;
+    
+    // Renderizar derechos de acceso si existen
+    if (accessRights && accessRights.length > 0) {
+      html += `
+        <div class="section-title">
+          <h4>Derechos de acceso (${accessRights.length})</h4>
+        </div>
+        <table class="permissions-table">
+          <thead>
+            <tr>
+              <th>Grupo</th>
+              <th>Leer</th>
+              <th>Escribir</th>
+              <th>Crear</th>
+              <th>Eliminar</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      
+      accessRights.forEach(access => {
+        html += `
+          <tr>
+            <td>${access.group_name}</td>
+            <td class="checkbox-cell">${access.perm_read ? '✓' : '✗'}</td>
+            <td class="checkbox-cell">${access.perm_write ? '✓' : '✗'}</td>
+            <td class="checkbox-cell">${access.perm_create ? '✓' : '✗'}</td>
+            <td class="checkbox-cell">${access.perm_unlink ? '✓' : '✗'}</td>
+          </tr>
+        `;
+      });
+      
+      html += `
+          </tbody>
+        </table>
+      `;
+    }
+    
+    // Renderizar reglas de registro si existen
+    if (recordRules && recordRules.length > 0) {
+      html += `
+        <div class="section-title">
+          <h4>Reglas de registro (${recordRules.length})</h4>
+        </div>
+        <table class="permissions-table">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Grupo</th>
+              <th>Dominio</th>
+              <th>Global</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      
+      recordRules.forEach(rule => {
+        html += `
+          <tr>
+            <td>${rule.name}</td>
+            <td>${rule.group_name || 'Global'}</td>
+            <td><code>${rule.domain_force}</code></td>
+            <td class="checkbox-cell">${rule.global ? '✓' : '✗'}</td>
+          </tr>
+        `;
+      });
+      
+      html += `
+          </tbody>
+        </table>
+      `;
+    }
+    
+    // Si no hay derechos ni reglas
+    if ((!accessRights || accessRights.length === 0) && (!recordRules || recordRules.length === 0)) {
+      html += `
+        <div class="placeholder">
+          <i class="placeholder-icon"></i>
+          <p>No se encontraron permisos o reglas asociadas a este modelo</p>
+        </div>
+      `;
+    }
+    
+    html += `</div>`;
+    
+    resultsContainer.innerHTML = html;
+  }
+</script>

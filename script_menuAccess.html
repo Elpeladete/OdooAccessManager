@@ -181,43 +181,86 @@
     const entityId = document.getElementById('permission-entity').value;
     const moduleId = document.getElementById('permission-module').value;
     
-    if (!entityId || !moduleId || moduleId === 'all') {
-      showToast('Por favor, selecciona un usuario/grupo y un módulo específico', 'warning');
+    if (!entityId || !moduleId) {
+      showToast('Seleccione una entidad y un módulo', 'warning');
       return;
     }
     
-    // Recopilar datos de todos los checkboxes
-    const permissions = [];
-    menuAccess.forEach(menu => {
-      permissions.push({
-        id: menu.id,
-        has_access: menu.has_access
+    // Recopilar todos los valores de los checkboxes
+    const menuAccessValues = [];
+    document.querySelectorAll('#menu-access tbody .permission-toggle').forEach(toggle => {
+      menuAccessValues.push({
+        menu_id: parseInt(toggle.dataset.menuId),
+        has_access: toggle.checked
       });
     });
     
-    // Desactivar botón y mostrar progreso
-    updatePermissionButtons('menu-access', true);
+    // Mostrar indicador de carga
     showToast('Guardando accesos a menús...', 'info', 0);
+    
+    // Desactivar todos los controles del formulario
+    document.querySelectorAll('#menu-access input, #menu-access button').forEach(el => {
+      el.disabled = true;
+    });
     
     google.script.run
       .withSuccessHandler(function(result) {
         if (result.success) {
           showToast('Accesos a menús guardados correctamente', 'success');
+          menuAccess = result.data;
+          renderMenuAccess();
         } else {
           showToast('Error al guardar accesos a menús: ' + result.error, 'error');
         }
         
-        updatePermissionButtons('menu-access', false, true);
+        // Reactivar controles
+        document.querySelectorAll('#menu-access input, #menu-access button').forEach(el => {
+          el.disabled = false;
+        });
       })
       .withFailureHandler(function(error) {
         showToast('Error al guardar accesos a menús: ' + error, 'error');
-        updatePermissionButtons('menu-access', false, true);
+        
+        // Reactivar controles
+        document.querySelectorAll('#menu-access input, #menu-access button').forEach(el => {
+          el.disabled = false;
+        });
       })
       .saveMenuAccess(odooConfig, {
         entityType: entityType,
         entityId: entityId,
         moduleId: moduleId,
-        permissions: permissions
+        menuAccess: menuAccessValues
       });
+  }
+  
+  // Función para alternar la visibilidad de los acordeones (duplicada para asegurar disponibilidad)
+  function toggleAccordion(id) {
+    logDebug('Alternando acordeón en menuAccess', { id });
+    const content = document.getElementById(id);
+    if (!content) {
+      logDebug('Elemento acordeón no encontrado', { id });
+      return;
+    }
+    
+    const header = content.previousElementSibling;
+    if (!header) {
+      logDebug('Encabezado de acordeón no encontrado', { id });
+      return;
+    }
+    
+    const icon = header.querySelector('.accordion-icon');
+    if (!icon) {
+      logDebug('Icono de acordeón no encontrado', { id });
+      return;
+    }
+    
+    if (content.style.display === 'none') {
+      content.style.display = 'block';
+      icon.textContent = '▲';
+    } else {
+      content.style.display = 'none';
+      icon.textContent = '▼';
+    }
   }
 </script>

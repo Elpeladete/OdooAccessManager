@@ -10,14 +10,50 @@
   let accessRights = [];
   let recordRules = [];
   let menuAccess = [];
+  
+  // Función de log para depuración
+  function logDebug(message, data) {
+    console.log(`[DEBUG] ${message}`, data);
+    // Log para GAS
+    try {
+      if (google && google.script && google.script.run) {
+        google.script.run.logToGas(`[DEBUG] ${message} ${data ? JSON.stringify(data) : ''}`);
+      }
+    } catch (e) {
+      console.log('Error al enviar log a GAS:', e);
+    }
+  }
 
   // Inicialización
   document.addEventListener('DOMContentLoaded', function() {
+    logDebug('DOM cargado completamente');
+    
+    // Asegurarnos de que las funciones básicas estén definidas
+    if (typeof setupEventListeners !== 'function') {
+      console.error('La función setupEventListeners no está definida. Verifica el orden de inclusión de scripts.');
+      showToast('Error de inicialización. Por favor recarga la página.', 'error', 0);
+      return;
+    }
+    
     setupEventListeners();
+    
+    // Verificar que todas las funciones clave estén disponibles
+    const requiredFunctions = [
+      'loadUsersAndGroups', 'renderUsersAndGroups', 'loadModules', 
+      'switchTab', 'closeModal', 'searchPermissionsByModel'
+    ];
+    
+    const missingFunctions = requiredFunctions.filter(fn => typeof window[fn] !== 'function');
+    
+    if (missingFunctions.length > 0) {
+      console.error('Faltan funciones requeridas:', missingFunctions);
+      showToast('Algunas funciones no están disponibles. Funcionalidad limitada.', 'warning', 5000);
+    }
   });
 
   // Cargar configuración guardada
   function loadSavedConfig(config) {
+    logDebug('Cargando configuración guardada', config);
     if (config) {
       odooConfig = config;
       
@@ -61,7 +97,7 @@
     });
     
     // Filtros de permisos
-    document.getElementById('permission-entity-type').addEventListener('change', updatePermissionEntityFilter);
+    document.getElementById('permission-entity-type').addEventListener('change', updatePermissionEntityOptions);
     document.getElementById('permission-entity').addEventListener('change', loadPermissions);
     document.getElementById('permission-module').addEventListener('change', loadPermissions);
     
@@ -92,7 +128,29 @@
     document.getElementById('modal-save').addEventListener('click', handleModalSave);
     
     // Botón de búsqueda por modelo
-    document.getElementById('search-model-btn').addEventListener('click', searchPermissionsByModel);
+    const searchModelBtn = document.getElementById('search-model-btn');
+    if (searchModelBtn) {
+      searchModelBtn.addEventListener('click', function() {
+        if (typeof searchPermissionsByModel === 'function') {
+          searchPermissionsByModel();
+        } else {
+          logDebug('La función searchPermissionsByModel no está definida');
+          showToast('Esta funcionalidad aún no está disponible', 'warning');
+        }
+      });
+    } else {
+      logDebug('Elemento search-model-btn no encontrado');
+    }
+    
+    // También agregar manejo de la tecla Enter en el campo de búsqueda de modelos
+    const modelSearchInput = document.getElementById('model-search-input');
+    if (modelSearchInput) {
+      modelSearchInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter' && typeof searchPermissionsByModel === 'function') {
+          searchPermissionsByModel();
+        }
+      });
+    }
     
     // Cargar configuración guardada
     google.script.run
@@ -102,6 +160,7 @@
 
   // Conectar a Odoo
   function connectToOdoo() {
+    logDebug('Iniciando conexión a Odoo');
     const url = document.getElementById('odoo-url').value.trim();
     const db = document.getElementById('odoo-db').value.trim();
     const username = document.getElementById('odoo-username').value.trim();
@@ -109,6 +168,12 @@
     
     if (!url || !db || !username || !password) {
       showToast('Por favor, completa todos los campos', 'warning');
+      return;
+    }
+    
+    // Validar formato de URL
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      showToast('La URL debe comenzar con http:// o https://', 'warning');
       return;
     }
     
@@ -123,10 +188,14 @@
       password: password
     };
     
+    logDebug('Enviando solicitud de conexión', { url, db, username });
+    
     google.script.run
       .withSuccessHandler(function(result) {
         document.getElementById('connect-btn').disabled = false;
         document.getElementById('connect-btn').textContent = 'Conectar';
+        
+        logDebug('Respuesta de conexión recibida', { success: result.success });
         
         if (result.success) {
           // Guardar configuración
@@ -147,10 +216,24 @@
           
           showToast('Conexión exitosa', 'success');
         } else {
-          showToast('Error de conexión: ' + result.error, 'error');
+          let errorMsg = result.error || 'Error desconocido';
+          // Mostrar información de depuración si está disponible
+          if (result.debug) {
+            logDebug('Detalles del error de conexión', result.debug);
+            // Mejorar mensaje de error basado en la respuesta
+            if (errorMsg.includes('XML-RPC Fault')) {
+              errorMsg = 'Error de autenticación. Verifica usuario y contraseña.';
+            } else if (errorMsg.includes('Failed to connect')) {
+              errorMsg = 'Error de conexión. Verifica la URL del servidor.';
+            } else if (errorMsg.includes('database')) {
+              errorMsg = 'Base de datos inválida o no accesible.';
+            }
+          }
+          showToast('Error de conexión: ' + errorMsg, 'error');
         }
       })
       .withFailureHandler(function(error) {
+        logDebug('Error en la llamada a testOdooConnection', { error });
         document.getElementById('connect-btn').disabled = false;
         document.getElementById('connect-btn').textContent = 'Conectar';
         showToast('Error de conexión: ' + error, 'error');
@@ -160,13 +243,21 @@
 
   // Guardar configuración de Odoo
   function saveOdooConfig() {
+    logDebug('Guardando configuración de Odoo');
+    
     const url = document.getElementById('odoo-url').value.trim();
     const db = document.getElementById('odoo-db').value.trim();
     const username = document.getElementById('odoo-username').value.trim();
-    const password = document.getElementById('odoo-password').value.trim();
+    const password = document.getElementById('odoo-password').value;
     
     if (!url || !db || !username || !password) {
-      showToast('Por favor, completa todos los campos', 'warning');
+      showToast('Todos los campos son obligatorios', 'warning');
+      return;
+    }
+    
+    // Validar formato de URL
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      showToast('La URL debe comenzar con http:// o https://', 'warning');
       return;
     }
     
@@ -177,61 +268,72 @@
       password: password
     };
     
+    // Mostrar indicador de carga
+    const saveBtn = document.getElementById('save-config-btn');
+    const originalText = saveBtn.textContent;
+    saveBtn.textContent = 'Guardando...';
+    saveBtn.disabled = true;
+    
+    // Guardar configuración
     google.script.run
       .withSuccessHandler(function(result) {
         if (result) {
           showToast('Configuración guardada correctamente', 'success');
+          
+          // Ofrecer conectar con la configuración guardada
+          connectToOdoo();
         } else {
           showToast('Error al guardar la configuración', 'error');
         }
+        
+        // Restaurar botón
+        saveBtn.textContent = originalText;
+        saveBtn.disabled = false;
       })
       .withFailureHandler(function(error) {
-        showToast('Error al guardar: ' + error, 'error');
+        showToast('Error: ' + error, 'error');
+        logDebug('Error al guardar configuración', { error });
+        
+        // Restaurar botón
+        saveBtn.textContent = originalText;
+        saveBtn.disabled = false;
       })
       .saveOdooConfig(config);
   }
-
-  // Cambiar de tab principal
-  function switchTab(tabId) {
-    // Actualizar botones de tab
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.tab === tabId);
-    });
+  
+  // Función para alternar la visibilidad de los acordeones
+  // Aseguramos que esta función esté disponible de forma global
+  function toggleAccordion(id) {
+    logDebug('Alternando acordeón en script_main', { id });
+    const content = document.getElementById(id);
+    if (!content) {
+      logDebug('Elemento acordeón no encontrado', { id });
+      return;
+    }
     
-    // Actualizar paneles de tab
-    document.querySelectorAll('.tab-pane').forEach(pane => {
-      pane.classList.toggle('active', pane.id === tabId);
-    });
+    const header = content.previousElementSibling;
+    if (!header) {
+      logDebug('Encabezado de acordeón no encontrado', { id });
+      return;
+    }
     
-    // Actualizar tab actual
-    currentTab = tabId;
+    const icon = header.querySelector('.accordion-icon');
+    if (!icon) {
+      logDebug('Icono de acordeón no encontrado', { id });
+      return;
+    }
     
-    // Cargar datos específicos
-    if (tabId === 'permissions') {
-      updatePermissionEntityFilter();
-      updatePermissionModuleOptions();
-    } else if (tabId === 'model-search') {
-      // Preparar la interfaz de búsqueda por modelo
-      const searchBox = document.querySelector('#model-search .search-box');
-      if (!searchBox.querySelector('input')) {
-        searchBox.innerHTML = `
-          <i class="search-icon"></i>
-          <input type="text" id="model-search-input" placeholder="Buscar por nombre de modelo (ej: res.partner, account.invoice)..." />
-        `;
-      }
+    if (content.style.display === 'none') {
+      content.style.display = 'block';
+      icon.textContent = '▲';
+    } else {
+      content.style.display = 'none';
+      icon.textContent = '▼';
     }
   }
 
-  // Mostrar toast
-  function showToast(message, type = 'info') {
-    const toast = document.getElementById('toast');
-    toast.textContent = message;
-    toast.className = 'toast';
-    toast.classList.add(type);
-    toast.classList.add('show');
-    
-    setTimeout(() => {
-      toast.classList.remove('show');
-    }, 3000);
-  }
+  // Nota: La función switchTab se ha movido a script_ui.html para evitar duplicación
+
+  // Nota: La función showToast se ha movido a script_ui.html para evitar duplicación
+  // La función closeModal también se ha movido a script_ui.html
 </script>

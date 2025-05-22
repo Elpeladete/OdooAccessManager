@@ -106,9 +106,12 @@
 
   // Función para actualizar la lista de entidades en el panel de permisos
   function updatePermissionEntityOptions() {
+    logDebug('Actualizando opciones de entidades para permisos');
     const entityTypeSelect = document.getElementById('permission-entity-type');
     const entitySelect = document.getElementById('permission-entity');
     const entityType = entityTypeSelect.value;
+    
+    logDebug('Tipo de entidad seleccionado', { entityType });
     
     // Limpiar las opciones actuales
     entitySelect.innerHTML = '<option value="">-- Seleccionar --</option>';
@@ -120,6 +123,8 @@
     } else {
       entities = usersAndGroups.filter(entity => entity.type === 'user');
     }
+    
+    logDebug('Entidades filtradas', { count: entities.length });
     
     // Ordenar alfabéticamente
     entities.sort((a, b) => a.name.localeCompare(b.name));
@@ -152,22 +157,52 @@
 
   // Cambia entre las pestañas de permisos (derechos acceso, reglas registro, acceso menús)
   function switchPermissionTab(tabId) {
-    // Desactivar todas las pestañas y paneles
+    // Actualizar botones de pestañas
     document.querySelectorAll('.permission-tab-btn').forEach(btn => {
       btn.classList.remove('active');
     });
+    document.querySelector(`.permission-tab-btn[data-tab="${tabId}"]`).classList.add('active');
+    
+    // Actualizar paneles de pestañas
     document.querySelectorAll('.permission-tab-pane').forEach(pane => {
       pane.classList.remove('active');
     });
-    
-    // Activar la pestaña seleccionada
-    document.querySelector(`.permission-tab-btn[data-tab="${tabId}"]`).classList.add('active');
     document.getElementById(tabId).classList.add('active');
     
-    // Actualizar la variable global
+    // Actualizar variable global
     currentPermissionTab = tabId;
     
-    // Recargar los permisos si hay una entidad seleccionada
+    // Cargar los permisos para la nueva pestaña seleccionada
     loadPermissions();
+  }
+  
+  // Función para alternar la visibilidad de los acordeones
+  function toggleAccordion(id) {
+    logDebug('Alternando acordeón', { id });
+    const content = document.getElementById(id);
+    if (!content) {
+      logDebug('Elemento acordeón no encontrado', { id });
+      return;
+    }
+    
+    const header = content.previousElementSibling;
+    if (!header) {
+      logDebug('Encabezado de acordeón no encontrado', { id });
+      return;
+    }
+    
+    const icon = header.querySelector('.accordion-icon');
+    if (!icon) {
+      logDebug('Icono de acordeón no encontrado', { id });
+      return;
+    }
+    
+    if (content.style.display === 'none') {
+      content.style.display = 'block';
+      icon.textContent = '▲';
+    } else {
+      content.style.display = 'none';
+      icon.textContent = '▼';
+    }
   }
 </script>

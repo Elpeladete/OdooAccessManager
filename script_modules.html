@@ -2,12 +2,33 @@
   // Carga los módulos de Odoo
   function loadModules() {
     const listElement = document.getElementById('modules-list');
+    if (!listElement) {
+      logDebug('Elemento modules-list no encontrado');
+      return;
+    }
+    
     listElement.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando módulos...</span></div>';
+    
+    logDebug('Iniciando carga de módulos desde el servidor');
     
     google.script.run
       .withSuccessHandler(function(result) {
+        logDebug('Respuesta recibida de getOdooModules', { success: result.success });
+        
         if (result.success) {
+          if (!result.data || !Array.isArray(result.data)) {
+            logDebug('Datos de módulos inválidos', { data: result.data });
+            listElement.innerHTML = '<div class="error">Error: Los datos recibidos no son válidos</div>';
+            showToast('Error al cargar módulos: Formato de datos incorrecto', 'error');
+            return;
+          }
+          
           modules = result.data;
+          logDebug(`Se cargaron ${modules.length} módulos`);
+          
+          // Verificar la estructura de los datos
+          verifyModulesData();
+          
           renderModules();
         } else {
           listElement.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
@@ -15,6 +36,7 @@
         }
       })
       .withFailureHandler(function(error) {
+        logDebug('Error en la carga de módulos', { error });
         listElement.innerHTML = '<div class="error">Error: ' + error + '</div>';
         showToast('Error al cargar módulos: ' + error, 'error');
       })
@@ -38,86 +60,139 @@
   // Filtra los módulos según criterios como instalado/no instalado y término de búsqueda
   function filterModules() {
     const listElement = document.getElementById('modules-list');
-    const filter = document.getElementById('module-filter').value;
-    const searchTerm = document.getElementById('module-search').value.toLowerCase().trim();
+    if (!listElement) {
+      logDebug('Elemento modules-list no encontrado en filterModules');
+      return;
+    }
     
-    if (!modules || modules.length === 0) {
+    const filterEl = document.getElementById('module-filter');
+    const searchEl = document.getElementById('module-search');
+    
+    if (!filterEl || !searchEl) {
+      logDebug('Elementos de filtro no encontrados', { 
+        filterFound: !!filterEl, 
+        searchFound: !!searchEl 
+      });
+      return;
+    }
+    
+    const filter = filterEl.value;
+    const searchTerm = searchEl.value.toLowerCase().trim();
+    
+    if (!modules || !Array.isArray(modules) || modules.length === 0) {
       listElement.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron módulos</p></div>';
       return;
     }
     
+    logDebug('Filtrando módulos', { filter, searchTerm, totalModules: modules.length });
+    
     // Agregar opción "Ver Todos" si no existe
     if (!document.getElementById('show-all-modules')) {
-      const showAllItem = document.createElement('div');
-      showAllItem.id = 'show-all-modules';
-      showAllItem.className = 'list-item show-all-item';
-      showAllItem.innerHTML = `
-        <div class="module-item">
-          <div class="module-name"><strong>Ver Todos los Módulos</strong></div>
-          <div class="module-technical" style="font-size: 0.8em; color: var(--text-muted);">Mostrar todos sin filtros</div>
-        </div>
-      `;
-      showAllItem.addEventListener('click', function() {
-        document.getElementById('module-filter').value = 'all';
-        document.getElementById('module-search').value = '';
-        filterModules();
-      });
-      
-      listElement.innerHTML = '';
-      listElement.appendChild(showAllItem);
+      try {
+        const showAllItem = document.createElement('div');
+        showAllItem.id = 'show-all-modules';
+        showAllItem.className = 'list-item show-all-item';
+        showAllItem.innerHTML = `
+          <div class="module-item">
+            <div class="module-name"><strong>Ver Todos los Módulos</strong></div>
+            <div class="module-technical" style="font-size: 0.8em; color: var(--text-muted);">Mostrar todos sin filtros</div>
+          </div>
+        `;
+        showAllItem.addEventListener('click', function() {
+          document.getElementById('module-filter').value = 'all';
+          document.getElementById('module-search').value = '';
+          filterModules();
+        });
+        
+        listElement.innerHTML = '';
+        listElement.appendChild(showAllItem);
+      } catch (e) {
+        logDebug('Error al crear elemento "Mostrar todos"', { error: e.message });
+      }
     }
     
-    let html = document.getElementById('show-all-modules').outerHTML;
+    let html = document.getElementById('show-all-modules') ? document.getElementById('show-all-modules').outerHTML : '';
     let matchCount = 0;
     
-    modules.forEach(module => {
-      // Aplicar filtros
-      let matchesSearch = true;
-      if (searchTerm) {
-        matchesSearch = module.name.toLowerCase().includes(searchTerm) || 
-                       module.technical_name.toLowerCase().includes(searchTerm) ||
-                       (module.description && module.description.toLowerCase().includes(searchTerm));
-      }
-      
-      let matchesFilter = true;
-      if (filter === 'installed') {
-        matchesFilter = module.installed;
-      } else if (filter === 'not-installed') {
-        matchesFilter = !module.installed;
-      }
-      
-      if (matchesSearch && matchesFilter) {
-        matchCount++;
-        html += createModuleItem(module);
-      }
-    });
+    try {
+      modules.forEach(module => {
+        if (!module) {
+          logDebug('Módulo inválido encontrado en el array');
+          return;
+        }
+        
+        // Aplicar filtros
+        let matchesSearch = true;
+        if (searchTerm) {
+          const name = module.name || '';
+          const technicalName = module.technical_name || '';
+          const description = module.description || '';
+          
+          matchesSearch = name.toLowerCase().includes(searchTerm) || 
+                          technicalName.toLowerCase().includes(searchTerm) ||
+                          description.toLowerCase().includes(searchTerm);
+        }
+        
+        let matchesFilter = true;
+        if (filter === 'installed') {
+          matchesFilter = module.installed === true;
+        } else if (filter === 'not-installed') {
+          matchesFilter = module.installed !== true;
+        }
+        
+        if (matchesSearch && matchesFilter) {
+          matchCount++;
+          html += createModuleItem(module);
+        }
+      });
+    } catch (e) {
+      logDebug('Error al procesar módulos para filtrarlos', { error: e.message });
+      html += `<div class="error">Error al procesar los módulos: ${e.message}</div>`;
+    }
     
     if (matchCount === 0) {
       html += '<div class="placeholder"><i class="placeholder-icon"></i><p>No se encontraron módulos que coincidan con los filtros</p></div>';
     }
     
-    listElement.innerHTML = html;
-    
-    // Agregar event listeners a los módulos
-    document.querySelectorAll('.module-item').forEach(item => {
-      item.addEventListener('click', moduleItemClickHandler);
-    });
-    
-    // Actualizar contador
-    updateModuleCounter(matchCount);
+    try {
+      listElement.innerHTML = html;
+      
+      // Agregar event listeners a los módulos
+      document.querySelectorAll('.module-item').forEach(item => {
+        if (item.closest('.list-item') && item.closest('.list-item').id !== 'show-all-modules') {
+          item.addEventListener('click', moduleItemClickHandler);
+        }
+      });
+      
+      // Actualizar contador
+      updateModuleCounter(matchCount);
+    } catch (e) {
+      logDebug('Error al actualizar la lista de módulos con el HTML filtrado', { error: e.message });
+      listElement.innerHTML = `<div class="error">Error al mostrar los módulos: ${e.message}</div>`;
+    }
   }
 
   // Crea un elemento HTML para un módulo
   function createModuleItem(module) {
-    const statusClass = module.installed ? 'module-installed' : 'module-not-installed';
-    const statusText = module.installed ? 'Instalado' : 'No Instalado';
+    if (!module) {
+      logDebug('Intento de crear elemento para un módulo undefined');
+      return '';
+    }
+    
+    // Garantizar que las propiedades existan
+    const isInstalled = module.installed === true;
+    const statusClass = isInstalled ? 'module-installed' : 'module-not-installed';
+    const statusText = isInstalled ? 'Instalado' : 'No Instalado';
+    const moduleName = module.name || 'Módulo sin nombre';
+    const technicalName = module.technical_name || 'Sin nombre técnico';
+    const moduleId = module.id || '';
     
     return `
-      <div class="list-item" data-id="${module.id}" data-technical="${module.technical_name}">
+      <div class="list-item" data-id="${moduleId}" data-technical="${technicalName}">
         <div class="module-item">
           <div class="module-status ${statusClass}">${statusText}</div>
-          <div class="module-name">${module.name}</div>
-          <div class="module-technical">${module.technical_name}</div>
+          <div class="module-name">${moduleName}</div>
+          <div class="module-technical">${technicalName}</div>
         </div>
       </div>
     `;
@@ -128,7 +203,11 @@
     const item = event.currentTarget.closest('.list-item');
     if (!item || item.id === 'show-all-modules') return;
     
-    const moduleId = item.dataset.id;
+    const moduleId = parseInt(item.dataset.id, 10);
+    if (isNaN(moduleId)) {
+      logDebug('ID de módulo inválido', { id: item.dataset.id });
+      return;
+    }
     
     // Si ya está seleccionado, deseleccionar
     if (item.classList.contains('selected')) {
@@ -145,7 +224,13 @@
     
     // Seleccionar el nuevo
     item.classList.add('selected');
+    
+    // Buscar el módulo seleccionado en el array de módulos
     selectedModule = modules.find(m => m.id === moduleId);
+    
+    if (!selectedModule) {
+      logDebug('Módulo no encontrado en la lista', { id: moduleId });
+    }
     
     // Mostrar detalles
     showModuleDetail(selectedModule);
@@ -154,20 +239,41 @@
   // Muestra los detalles de un módulo
   function showModuleDetail(module) {
     const detailPanel = document.getElementById('module-detail');
+    if (!detailPanel) {
+      logDebug('Elemento module-detail no encontrado');
+      return;
+    }
+    
+    // Verificar que el módulo existe
+    if (!module) {
+      logDebug('Intento de mostrar detalles de un módulo undefined');
+      detailPanel.innerHTML = `
+        <div class="detail-header">
+          <h3>Error</h3>
+        </div>
+        <div class="detail-content">
+          <div class="error">No se pudo cargar la información del módulo</div>
+        </div>
+      `;
+      return;
+    }
+    
     detailPanel.classList.add('active');
     
-    let statusClass = module.installed ? 'badge-success' : 'badge-secondary';
-    let statusText = module.installed ? 'Instalado' : 'No Instalado';
+    // Usar valores predeterminados en caso de que las propiedades no existan
+    const isInstalled = module.installed === true;
+    let statusClass = isInstalled ? 'badge-success' : 'badge-secondary';
+    let statusText = isInstalled ? 'Instalado' : 'No Instalado';
     
     detailPanel.innerHTML = `
       <div class="detail-header">
-        <h3>${module.name}</h3>
+        <h3>${module.name || 'Módulo sin nombre'}</h3>
         <span class="badge ${statusClass}">${statusText}</span>
       </div>
       <div class="detail-content">
         <div class="detail-section">
           <div class="detail-label">Nombre Técnico:</div>
-          <div class="detail-value">${module.technical_name}</div>
+          <div class="detail-value">${module.technical_name || 'No disponible'}</div>
         </div>
         
         <div class="detail-section">
@@ -208,6 +314,11 @@
   // Cierra el panel de detalles de módulo
   function closeModuleDetail() {
     const detailPanel = document.getElementById('module-detail');
+    if (!detailPanel) {
+      logDebug('Elemento module-detail no encontrado en closeModuleDetail');
+      return;
+    }
+    
     detailPanel.classList.remove('active');
     detailPanel.innerHTML = '<div class="placeholder"><p>Selecciona un módulo para ver detalles</p></div>';
   }
@@ -215,8 +326,15 @@
   // Actualiza el contador de módulos
   function updateModuleCounter(count) {
     const counter = document.getElementById('module-counter');
-    if (counter) {
+    if (!counter) {
+      // El contador podría no existir en la UI, no es un error crítico
+      return;
+    }
+    
+    try {
       counter.textContent = count + ' módulo' + (count !== 1 ? 's' : '');
+    } catch (e) {
+      logDebug('Error al actualizar contador de módulos', { error: e.message });
     }
   }
 
@@ -251,5 +369,31 @@
     }
     
     moduleSelect.disabled = availableModules.length === 0;
+  }
+  
+  // Función para verificar la estructura de los datos de módulos
+  function verifyModulesData() {
+    logDebug('Verificando estructura de datos de módulos', { count: modules.length });
+    
+    if (!modules || !Array.isArray(modules)) {
+      logDebug('Array de módulos no válido', { modules });
+      return false;
+    }
+    
+    // Verificar algunos módulos para diagnóstico
+    const sampleSize = Math.min(3, modules.length);
+    const sampleModules = modules.slice(0, sampleSize);
+    
+    sampleModules.forEach((module, index) => {
+      logDebug(`Muestra de módulo ${index + 1}/${sampleSize}`, {
+        id: module.id,
+        name: module.name,
+        technical_name: module.technical_name,
+        installed: module.installed,
+        hasProperties: !!module && typeof module === 'object'
+      });
+    });
+    
+    return true;
   }
 </script>

@@ -2,38 +2,118 @@
 
 // Función para llamar a la API de Odoo
 function callOdooAPI(config, model, method, args, kwargs = {}) {
-  // Validar config
-  if (!config || !config.url || !config.db || !config.username || !config.password) {
-    throw new Error('Configuración incompleta');
-  }
-  
-  // Obtener UID
-  let uid;
   try {
-    uid = getOdooUID(config);
-    if (!uid) {
-      throw new Error('No se pudo autenticar con Odoo');
+    Logger.log(`Llamando a API Odoo: modelo=${model}, método=${method}`);
+    
+    // Validar config
+    if (!config || !config.url || !config.db || !config.username || !config.password) {
+      Logger.log('Error: Configuración incompleta');
+      Logger.log(JSON.stringify({
+        hasConfig: !!config,
+        hasUrl: config ? !!config.url : false,
+        hasDb: config ? !!config.db : false,
+        hasUsername: config ? !!config.username : false,
+        hasPassword: config ? !!config.password : false
+      }));
+      throw new Error('Configuración incompleta para conexión a API');
     }
+    
+    // Obtener UID
+    let uid;
+    try {
+      Logger.log('Obteniendo UID para autenticación');
+      uid = getOdooUID(config);
+      if (!uid) {
+        Logger.log('Error: No se pudo obtener UID');
+        throw new Error('No se pudo autenticar con Odoo');
+      }
+      Logger.log(`UID obtenido: ${uid}`);
+    } catch (error) {
+      Logger.log(`Error de autenticación: ${error.message}`);
+      throw new Error('Error de autenticación: ' + error.message);
+    }
+    
+    // Preparar URL
+    if (typeof config.url !== 'string') {
+      Logger.log('Error: URL no es un string: ' + typeof config.url);
+      throw new Error('URL no es un string válido');
+    }
+    
+    const url = config.url.endsWith('/') ? config.url : config.url + '/';
+    const xmlrpcUrl = url + 'xmlrpc/2/object';
+    Logger.log(`URL para API Odoo: ${xmlrpcUrl}`);
+    
+    // Preparar payload XML-RPC
+    const payload = XmlRpc.createCall('execute_kw', [
+      config.db,
+      uid,
+      config.password,
+      model,
+      method,
+      args,
+      kwargs
+    ]);
+    
+    // Realizar la solicitud
+    Logger.log('Enviando solicitud a API Odoo');
+    const options = {
+      method: 'post',
+      contentType: 'text/xml',
+      payload: payload,
+      muteHttpExceptions: true
+    };
+    
+    const response = UrlFetchApp.fetch(xmlrpcUrl, options);
+    const responseText = response.getContentText();
+    
+    if (response.getResponseCode() !== 200) {
+      Logger.log(`Error HTTP ${response.getResponseCode()}: ${responseText.substring(0, 200)}...`);
+      throw new Error(`Error HTTP ${response.getResponseCode()}: ${responseText}`);
+    }
+    
+    Logger.log('Respuesta recibida correctamente de API Odoo');
+    return XmlRpc.parseResponse(responseText);
   } catch (error) {
-    throw new Error('Error de autenticación: ' + error.message);
+    Logger.log(`Error en callOdooAPI: ${error.toString()}`);
+    throw error;
   }
-  
-  // Preparar URL
-  const url = config.url.endsWith('/') ? config.url : config.url + '/';
-  const xmlrpcUrl = url + 'xmlrpc/2/object';
-  
-  // Preparar payload XML-RPC
-  const payload = XmlRpc.createCall('execute_kw', [
-    config.db,
-    uid,
-    config.password,
-    model,
-    method,
-    args,
-    kwargs
-  ]);
-  
+}
+
+// Obtener UID para autenticación
+function getOdooUID(config) {
   try {
+    // Validar que la configuración es completa
+    if (!config || !config.url || !config.db || !config.username || !config.password) {
+      Logger.log('Error: Configuración incompleta para getOdooUID');
+      Logger.log(JSON.stringify({
+        hasConfig: !!config,
+        hasUrl: config ? !!config.url : false,
+        hasDb: config ? !!config.db : false,
+        hasUsername: config ? !!config.username : false,
+        hasPassword: config ? !!config.password : false
+      }));
+      throw new Error('Configuración incompleta para autenticación');
+    }
+    
+    Logger.log('Obteniendo UID para ' + config.username + ' en ' + config.db);
+    
+    // Validar que config.url existe y es un string
+    if (typeof config.url !== 'string') {
+      Logger.log('Error: URL no es un string: ' + typeof config.url);
+      throw new Error('URL no es un string válido');
+    }
+    
+    const url = config.url.endsWith('/') ? config.url : config.url + '/';
+    const xmlrpcUrl = url + 'xmlrpc/2/common';
+    Logger.log('URL para autenticación: ' + xmlrpcUrl);
+    
+    const payload = XmlRpc.createCall('authenticate', [
+      config.db,
+      config.username,
+      config.password,
+      {}
+    ]);
+    
     // Realizar la solicitud
     const options = {
       method: 'post',
@@ -46,47 +126,38 @@ function callOdooAPI(config, model, method, args, kwargs = {}) {
     const responseText = response.getContentText();
     
     if (response.getResponseCode() !== 200) {
-      throw new Error(`Error HTTP ${response.getResponseCode()}: ${responseText}`);
-    }
-    
-    return XmlRpc.parseResponse(responseText);
-  } catch (error) {
-    Logger.log(`Error en callOdooAPI: ${error.toString()}`);
-    throw error;
-  }
-}
-
-// Obtener UID para autenticación
-function getOdooUID(config) {
-  const url = config.url.endsWith('/') ? config.url : config.url + '/';
-  const xmlrpcUrl = url + 'xmlrpc/2/common';
-  
-  const payload = XmlRpc.createCall('authenticate', [
-    config.db,
-    config.username,
-    config.password,
-    {}
-  ]);
-  
-  try {
-    const options = {
-      method: 'post',
-      contentType: 'text/xml',
-      payload: payload,
-      muteHttpExceptions: true
-    };
-    
-    const response = UrlFetchApp.fetch(xmlrpcUrl, options);
-    const responseText = response.getContentText();
-    
-    if (response.getResponseCode() !== 200) {
+      Logger.log(`Error HTTP al obtener UID: ${response.getResponseCode()}`);
       throw new Error(`Error HTTP ${response.getResponseCode()}: ${responseText}`);
     }
     
     const uid = XmlRpc.parseResponse(responseText);
+    
+    if (!uid || (typeof uid !== 'number' && typeof uid !== 'string')) {
+      Logger.log('UID inválido recibido: ' + JSON.stringify(uid));
+      throw new Error('Autenticación fallida: UID inválido');
+    }
+    
+    Logger.log('UID obtenido correctamente: ' + uid);
     return uid;
   } catch (error) {
     Logger.log(`Error en getOdooUID: ${error.toString()}`);
+    
+    // Añadir diagnóstico detallado
+    Logger.log('Diagnóstico detallado para error de autenticación:');
+    try {
+      Logger.log(`Tipo de config: ${typeof config}`);
+      Logger.log(`Config tiene URL: ${config && !!config.url}`);
+      if (config && config.url) {
+        Logger.log(`URL: ${config.url.substring(0, 30)}...`);
+        Logger.log(`Tipo de URL: ${typeof config.url}`);
+      }
+      Logger.log(`Config tiene DB: ${config && !!config.db}`);
+      Logger.log(`Config tiene username: ${config && !!config.username}`);
+      Logger.log(`Config tiene password: ${config && !!config.password}`);
+    } catch (e) {
+      Logger.log('Error durante diagnóstico: ' + e.toString());
+    }
+    
     throw error;
   }
 }
@@ -163,34 +234,46 @@ const XmlRpc = {
   },
   
   parseResponse: function(xml) {
-    const document = XmlService.parse(xml);
-    const root = document.getRootElement();
-    
-    // Verificar si hay un error
-    const fault = root.getChild('fault');
-    if (fault) {
-      const value = fault.getChild('value');
-      const errorStruct = this.parseValue(value);
-      throw new Error(`XML-RPC Fault: ${errorStruct.faultCode} - ${errorStruct.faultString}`);
+    try {
+      Logger.log('Analizando respuesta XML-RPC');
+      const document = XmlService.parse(xml);
+      const root = document.getRootElement();
+      
+      // Verificar si hay un error
+      const fault = root.getChild('fault');
+      if (fault) {
+        const value = fault.getChild('value');
+        const errorStruct = this.parseValue(value);
+        Logger.log(`Error XML-RPC: ${errorStruct.faultCode} - ${errorStruct.faultString}`);
+        throw new Error(`XML-RPC Fault: ${errorStruct.faultCode} - ${errorStruct.faultString}`);
+      }
+      
+      // Obtener el valor de respuesta
+      const params = root.getChild('params');
+      if (!params) {
+        Logger.log('No se encontró elemento params en la respuesta');
+        return null;
+      }
+      
+      const param = params.getChild('param');
+      if (!param) {
+        Logger.log('No se encontró elemento param en la respuesta');
+        return null;
+      }
+      
+      const value = param.getChild('value');
+      if (!value) {
+        Logger.log('No se encontró elemento value en la respuesta');
+        return null;
+      }
+      
+      const result = this.parseValue(value);
+      Logger.log('Respuesta XML-RPC analizada correctamente');
+      return result;
+    } catch (e) {
+      Logger.log(`Error al analizar respuesta XML-RPC: ${e.message}`);
+      throw new Error(`Error al analizar respuesta XML-RPC: ${e.message}`);
     }
-    
-    // Obtener el valor de respuesta
-    const params = root.getChild('params');
-    if (!params) {
-      return null;
-    }
-    
-    const param = params.getChild('param');
-    if (!param) {
-      return null;
-    }
-    
-    const value = param.getChild('value');
-    if (!value) {
-      return null;
-    }
-    
-    return this.parseValue(value);
   },
   
   parseValue: function(valueElement) {

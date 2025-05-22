@@ -1,4 +1,21 @@
 <script>
+  // Función para registrar mensajes de depuración en la consola
+  function logDebug(message, data) {
+    if (typeof console !== 'undefined' && console.log) {
+      console.log('[DEBUG] ' + message, data || '');
+    }
+  }
+
+  // Función de seguridad para verificar elementos del DOM
+  function safeDOM(elementId, operation = 'use') {
+    const element = document.getElementById(elementId);
+    if (!element) {
+      logDebug(`Elemento ${elementId} no encontrado al intentar ${operation}`);
+      return null;
+    }
+    return element;
+  }
+
   // Función para mostrar un mensaje toast
   function showToast(message, type = 'info', duration = 3000) {
     const toastContainer = document.getElementById('toast-container') || createToastContainer();
@@ -45,6 +62,52 @@
     container.id = 'toast-container';
     document.body.appendChild(container);
     return container;
+  }
+  
+  // Función para cerrar el modal
+  function closeModal() {
+    const modal = document.getElementById('edit-modal');
+    if (modal) {
+      modal.style.display = 'none';
+    }
+  }
+  
+  // Manejar guardado de modal
+  function handleModalSave() {
+    const saveButton = document.getElementById('modal-save');
+    if (!saveButton) {
+      console.error('Botón de guardar modal no encontrado');
+      return;
+    }
+    
+    const action = saveButton.dataset.action;
+    logDebug('Manejando acción de modal', { action });
+    
+    // Verificar si las funciones específicas existen
+    try {
+      if (action === 'add-access-right' && typeof addAccessRight === 'function') {
+        addAccessRight();
+      } else if (action === 'add-record-rule' && typeof addRecordRule === 'function') {
+        addRecordRule();
+      } else if (action === 'edit-record-rule') {
+        const index = parseInt(saveButton.dataset.index);
+        if (typeof saveRecordRuleEdit === 'function') {
+          saveRecordRuleEdit(index);
+        }
+      } else if (action === 'add-model-permission' && typeof addModelPermission === 'function') {
+        addModelPermission();
+      } else if (action === 'add-model-rule' && typeof addModelRule === 'function') {
+        addModelRule();
+      } else {
+        logDebug('Acción de modal no implementada', { action });
+        showToast('Esta funcionalidad aún no está implementada', 'warning');
+      }
+    } catch (e) {
+      logDebug('Error al procesar acción de modal', { action, error: e.message });
+      showToast('Error al procesar la acción: ' + e.message, 'error');
+    }
+    
+    closeModal();
   }
 
   // Función para crear y mostrar modales
@@ -297,25 +360,55 @@
 
   // Cambia entre las pestañas principales (usuarios/grupos, módulos, permisos)
   function switchTab(tabId) {
+    logDebug('Cambiando a la pestaña', { tabId });
     currentTab = tabId;
     
-    // Actualizar botones de tabs
+    // Activar botón de pestaña y mostrar contenido correspondiente
     document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.tab === tabId);
+      btn.classList.remove('active');
     });
+    document.querySelector(`.tab-btn[data-tab="${tabId}"]`).classList.add('active');
     
-    // Actualizar contenido de tabs
     document.querySelectorAll('.tab-pane').forEach(pane => {
-      pane.classList.toggle('active', pane.id === tabId);
+      pane.classList.remove('active');
     });
+    document.getElementById(tabId).classList.add('active');
     
-    // Cargar datos si es necesario
+    // Acciones específicas por pestaña
     if (tabId === 'users-groups' && usersAndGroups.length === 0) {
+      logDebug('Cargando usuarios y grupos en cambio de pestaña');
       loadUsersAndGroups();
     } else if (tabId === 'modules' && modules.length === 0) {
+      logDebug('Cargando módulos en cambio de pestaña');
       loadModules();
-    } else if (tabId === 'permissions') {
-      updatePermissionModuleOptions();
     }
   }
+
+  // Función para verificar si los elementos del DOM existen y manejar errores
+  window.safeUpdateElement = function(elementId, updateFn) {
+    const element = document.getElementById(elementId);
+    if (!element) {
+      logDebug(`Elemento '${elementId}' no encontrado en safeUpdateElement`);
+      return false;
+    }
+    
+    try {
+      updateFn(element);
+      return true;
+    } catch (e) {
+      logDebug(`Error al actualizar elemento '${elementId}'`, { error: e.message });
+      return false;
+    }
+  };
+
+  // Función para actualizar innterHTML de manera segura
+  window.safeSetHTML = function(elementId, html) {
+    return safeUpdateElement(elementId, element => {
+      element.innerHTML = html;
+    });
+  };
+
+  // Ejemplo de uso:
+  // safeSetHTML('user-group-detail', '<div>Nuevo contenido</div>');
+  // safeUpdateElement('my-element', (el) => { el.classList.add('active'); });
 </script>

@@ -1,20 +1,63 @@
+<!-- filepath: /workspaces/OdooAccessManager/script_users.html -->
 <script>
+  // Función para registrar mensajes de depuración en la consola
+  function logDebug(message, data) {
+    if (typeof console !== 'undefined' && console.log) {
+      console.log('[DEBUG] ' + message, data || '');
+    }
+  }
+
+  // Verificar disponibilidad de la configuración de Odoo
+  function checkOdooConfig() {
+    if (typeof odooConfig === 'undefined' || !odooConfig) {
+      logDebug('odooConfig no está definido o es nulo');
+      return false;
+    }
+    
+    if (!odooConfig.url || !odooConfig.db || !odooConfig.username || !odooConfig.password) {
+      logDebug('odooConfig incompleto', {
+        hasUrl: !!odooConfig.url,
+        hasDb: !!odooConfig.db,
+        hasUsername: !!odooConfig.username,
+        hasPassword: !!odooConfig.password
+      });
+      return false;
+    }
+    
+    return true;
+  }
+
   // Cargar usuarios y grupos
   function loadUsersAndGroups() {
+    logDebug('Iniciando carga de usuarios y grupos');
+    
+    if (!checkOdooConfig()) {
+      logDebug('No se puede cargar usuarios y grupos: configuración incompleta');
+      const listElement = document.getElementById('users-groups-list');
+      if (listElement) {
+        listElement.innerHTML = '<div class="error">Error: Configuración de conexión incompleta</div>';
+      }
+      return;
+    }
+    
     const listElement = document.getElementById('users-groups-list');
     listElement.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando usuarios y grupos...</span></div>';
     
     google.script.run
       .withSuccessHandler(function(result) {
+        logDebug('Respuesta recibida de getOdooUsersAndGroups', { success: result.success });
         if (result.success) {
           usersAndGroups = result.data;
+          logDebug('Usuarios y grupos cargados correctamente', { count: usersAndGroups.length });
           renderUsersAndGroups();
         } else {
+          logDebug('Error al cargar usuarios y grupos', { error: result.error });
           listElement.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
           showToast('Error al cargar usuarios y grupos: ' + result.error, 'error');
         }
       })
       .withFailureHandler(function(error) {
+        logDebug('Fallo al cargar usuarios y grupos', { error });
         listElement.innerHTML = '<div class="error">Error: ' + error + '</div>';
         showToast('Error al cargar usuarios y grupos: ' + error, 'error');
       })
@@ -23,6 +66,7 @@
 
   // Renderizar lista de usuarios y grupos
   function renderUsersAndGroups() {
+    logDebug('Renderizando lista de usuarios y grupos');
     const listElement = document.getElementById('users-groups-list');
     const filter = document.getElementById('user-group-filter').value;
     const searchTerm = document.getElementById('user-group-search').value.toLowerCase();
@@ -98,8 +142,21 @@
 
   // Seleccionar usuario o grupo
   function selectUserGroup(id, type) {
+    logDebug('Seleccionando usuario/grupo', { id, type });
+    
+    // Verificar que los parámetros sean válidos
+    if (!id || !type) {
+      logDebug('ID o tipo inválidos', { id, type });
+      return;
+    }
+    
     // Mostrar indicador de carga
     const detailElement = document.getElementById('user-group-detail');
+    if (!detailElement) {
+      logDebug('Elemento user-group-detail no encontrado');
+      return;
+    }
+    
     detailElement.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando detalles...</span></div>';
     
     // Resaltar elemento seleccionado
@@ -107,22 +164,33 @@
       item.classList.remove('active');
     });
     
-    document.querySelectorAll('#users-groups-list .list-item').forEach(item => {
-      if (item.querySelector('.user-group-name').textContent.trim().includes(usersAndGroups.find(i => i.id === id && i.type === type)?.name)) {
-        item.classList.add('active');
+    // Buscar información del item
+    const item = usersAndGroups.find(i => i.id === id && i.type === type);
+    
+    if (!item) {
+      logDebug('No se encontró información para el item', { id, type });
+      detailElement.innerHTML = '<div class="error">Error: No se encontró la información</div>';
+      return;
+    }
+    
+    // Resaltar el elemento seleccionado - usamos una técnica más directa
+    const selectedItemName = item.name;
+    logDebug('Buscando elemento para resaltar con nombre', { name: selectedItemName });
+    
+    document.querySelectorAll('#users-groups-list .list-item').forEach(listItem => {
+      const itemNameEl = listItem.querySelector('.user-group-name');
+      if (itemNameEl) {
+        const displayedName = itemNameEl.textContent.trim().split('\n')[0].trim();
+        if (displayedName === selectedItemName) {
+          listItem.classList.add('active');
+          logDebug('Elemento marcado como activo', { name: displayedName });
+        }
       }
     });
     
     // Guardar selección actual
     selectedUserGroup = { id, type };
-    
-    // Buscar información del item
-    const item = usersAndGroups.find(i => i.id === id && i.type === type);
-    
-    if (!item) {
-      detailElement.innerHTML = '<div class="error">Error: No se encontró la información</div>';
-      return;
-    }
+    logDebug('Seleccionado usuario/grupo', selectedUserGroup);
     
     // Renderizar detalles
     renderUserGroupDetails(item);
@@ -130,7 +198,7 @@
     // Si estamos en la pestaña de permisos, actualizar selección
     if (currentTab === 'permissions') {
       document.getElementById('permission-entity-type').value = type;
-      updatePermissionEntityFilter();
+      updatePermissionEntityOptions();
       
       setTimeout(() => {
         document.getElementById('permission-entity').value = id;
@@ -141,7 +209,18 @@
 
   // Renderizar detalles de usuario o grupo
   function renderUserGroupDetails(item) {
+    if (!item) {
+      logDebug('Item no válido para renderizar detalles');
+      return;
+    }
+    
+    logDebug('Renderizando detalles para', { id: item.id, type: item.type, name: item.name });
+    
     const detailElement = document.getElementById('user-group-detail');
+    if (!detailElement) {
+      logDebug('Elemento user-group-detail no encontrado');
+      return;
+    }
     
     let html = `
       <div class="detail-header">
@@ -225,32 +304,68 @@
       </div>
     `;
     
-    // Cargar usuarios del grupo y grupos heredados
-    if (item.type === 'user') {
-      loadUserGroups(item.id);
-    } else {
-      loadGroupUsers(item.id);
-      loadGroupImpliedIds(item.id);
+    // Usar la función segura para actualizar el contenido
+    try {
+      detailElement.innerHTML = html;
+      logDebug('HTML detalle actualizado correctamente');
       
-      // Cargar permisos y reglas del grupo
-      loadGroupAccessRights(item.id);
-      loadGroupRecordRules(item.id);
+      // Luego proceder con la carga de datos adicionales
+      setTimeout(() => {
+        if (item.type === 'user') {
+          loadUserGroups(item.id);
+        } else {
+          // Cargar datos en orden secuencial para evitar problemas de DOM
+          loadGroupUsers(item.id);
+          loadGroupImpliedIds(item.id);
+          
+          // Pequeño retraso para asegurar que el DOM está completamente actualizado
+          setTimeout(() => {
+            loadGroupAccessRights(item.id);
+            loadGroupRecordRules(item.id);
+          }, 150);
+        }
+      }, 100);
+    } catch (e) {
+      logDebug('Error al actualizar detalles', { error: e.message });
+      // Intento alternativo con la función segura
+      if (typeof safeSetHTML === 'function') {
+        safeSetHTML('user-group-detail', html);
+      }
     }
-    
-    detailElement.innerHTML = html;
   }
 
   // Cargar grupos de un usuario
   function loadUserGroups(userId) {
+    logDebug('Cargando grupos para usuario', { userId });
+    
+    if (!userId) {
+      logDebug('ID de usuario no válido', { userId });
+      return;
+    }
+    
+    const listElement = document.getElementById('user-groups-list');
+    if (!listElement) {
+      logDebug('Elemento user-groups-list no encontrado');
+      return;
+    }
+    
     google.script.run
       .withSuccessHandler(function(result) {
-        const listElement = document.getElementById('user-groups-list');
+        logDebug('Respuesta recibida para grupos de usuario', { success: result.success });
+        
+        // Verificar que el elemento aún exista
+        const listElementCheck = document.getElementById('user-groups-list');
+        if (!listElementCheck) {
+          logDebug('Elemento user-groups-list ya no existe al recibir respuesta');
+          return;
+        }
         
         if (result.success) {
           const groups = result.data;
+          logDebug('Grupos obtenidos para usuario', { count: groups.length });
           
           if (groups.length === 0) {
-            listElement.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este usuario no pertenece a ningún grupo</p></div>';
+            listElementCheck.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este usuario no pertenece a ningún grupo</p></div>';
             return;
           }
           
@@ -266,29 +381,46 @@
             `;
           });
           
-          listElement.innerHTML = html;
+          listElementCheck.innerHTML = html;
         } else {
-          listElement.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+          logDebug('Error al cargar grupos de usuario', { error: result.error });
+          listElementCheck.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
         }
       })
       .withFailureHandler(function(error) {
-        document.getElementById('user-groups-list').innerHTML = 
-          '<div class="error">Error: ' + error + '</div>';
+        logDebug('Fallo al cargar grupos de usuario', { error });
+        const errorElement = document.getElementById('user-groups-list');
+        if (errorElement) {
+          errorElement.innerHTML = '<div class="error">Error: ' + error + '</div>';
+        }
       })
       .getUserGroups(odooConfig, userId);
   }
 
   // Cargar usuarios de un grupo
   function loadGroupUsers(groupId) {
+    logDebug('Cargando usuarios para grupo', { groupId });
+    const element = document.getElementById('group-users-list');
+    
+    if (!element) {
+      logDebug('Elemento group-users-list no encontrado');
+      return;
+    }
+    
     google.script.run
       .withSuccessHandler(function(result) {
-        const element = document.getElementById('group-users-list');
+        // Verificar que el elemento aún exista
+        const elementCheck = document.getElementById('group-users-list');
+        if (!elementCheck) {
+          logDebug('Elemento group-users-list ya no existe al recibir respuesta');
+          return;
+        }
         
         if (result.success) {
           const users = result.data;
           
           if (users.length === 0) {
-            element.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este grupo no tiene usuarios asignados</p></div>';
+            elementCheck.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este grupo no tiene usuarios asignados</p></div>';
             return;
           }
           
@@ -304,232 +436,327 @@
           });
           html += '</div>';
           
-          element.innerHTML = html;
+          elementCheck.innerHTML = html;
         } else {
-          element.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+          elementCheck.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
         }
       })
       .withFailureHandler(function(error) {
-        document.getElementById('group-users-list').innerHTML = 
-          '<div class="error">Error: ' + error + '</div>';
+        const errorElement = document.getElementById('group-users-list');
+        if (errorElement) {
+          errorElement.innerHTML = '<div class="error">Error: ' + error + '</div>';
+        } else {
+          logDebug('Error al cargar usuarios del grupo', { error, groupId });
+        }
       })
       .getGroupUsers(odooConfig, groupId);
   }
 
   // Cargar grupos heredados
   function loadGroupImpliedIds(groupId) {
+    logDebug('Cargando grupos heredados para grupo', { groupId });
+    const element = document.getElementById('group-implied-ids');
+    
+    if (!element) {
+      logDebug('Elemento group-implied-ids no encontrado');
+      return;
+    }
+    
     google.script.run
       .withSuccessHandler(function(result) {
-        const element = document.getElementById('group-implied-ids');
+        // Verificar que el elemento aún exista
+        const elementCheck = document.getElementById('group-implied-ids');
+        if (!elementCheck) {
+          logDebug('Elemento group-implied-ids ya no existe al recibir respuesta');
+          return;
+        }
         
         if (result.success) {
           const groups = result.data;
           
           if (groups.length === 0) {
-            element.textContent = 'Ninguno';
+            elementCheck.textContent = 'Ninguno';
             return;
           }
           
-          element.innerHTML = groups.map(g => 
+          elementCheck.innerHTML = groups.map(g => 
             `<div class="badge badge-light" style="margin: 2px;">${g.name}</div>`
           ).join(' ');
         } else {
-          element.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+          elementCheck.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
         }
       })
       .withFailureHandler(function(error) {
-        document.getElementById('group-implied-ids').innerHTML = 
-          '<div class="error">Error: ' + error + '</div>';
+        const errorElement = document.getElementById('group-implied-ids');
+        if (errorElement) {
+          errorElement.innerHTML = '<div class="error">Error: ' + error + '</div>';
+        } else {
+          logDebug('Error al cargar grupos heredados', { error, groupId });
+        }
       })
       .getGroupImpliedIds(odooConfig, groupId);
   }
 
   // Función para cargar los permisos de acceso de un grupo
   function loadGroupAccessRights(groupId) {
+    logDebug('Cargando permisos de acceso para grupo', { groupId });
+    if (!groupId) {
+      logDebug('No se proporcionó ID de grupo');
+      return;
+    }
+    
     const container = document.getElementById('group-access-rights');
-    container.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando permisos de acceso...</span></div>';
+    
+    if (!container) {
+      logDebug('Elemento group-access-rights no encontrado');
+      return;
+    }
+    
+    try {
+      container.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando permisos de acceso...</span></div>';
+    } catch (e) {
+      logDebug('Error al actualizar container HTML', { error: e.message });
+      return;
+    }
     
     google.script.run
       .withSuccessHandler(function(result) {
-        if (result.success) {
-          const accessRights = result.data;
-          
-          if (accessRights.length === 0) {
-            container.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este grupo no tiene permisos de acceso específicos</p></div>';
+        try {
+          // Verificar que el contenedor aún exista (podría haberse eliminado)
+          const containerCheck = document.getElementById('group-access-rights');
+          if (!containerCheck) {
+            logDebug('Elemento group-access-rights ya no existe al recibir respuesta');
             return;
           }
           
-          // Agrupar permisos por módulo
-          const moduleGroups = {};
-          accessRights.forEach(right => {
-            const moduleName = right.module_name || 'Sin módulo';
-            if (!moduleGroups[moduleName]) {
-              moduleGroups[moduleName] = [];
+          if (result.success) {
+            const accessRights = result.data;
+            
+            if (accessRights.length === 0) {
+              containerCheck.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este grupo no tiene permisos de acceso específicos</p></div>';
+              return;
             }
-            moduleGroups[moduleName].push(right);
-          });
-          
-          let html = '';
-          
-          // Crear acordeones para cada módulo
-          Object.keys(moduleGroups).sort().forEach(moduleName => {
-            const moduleRights = moduleGroups[moduleName];
-            const moduleId = 'module-' + moduleName.replace(/\s+/g, '-').toLowerCase();
             
-            html += `
-              <div class="accordion-item">
-                <div class="accordion-header" onclick="toggleAccordion('${moduleId}')">
-                  <span class="accordion-title">${moduleName}</span>
-                  <span class="accordion-count badge badge-light">${moduleRights.length}</span>
-                  <span class="accordion-icon">▼</span>
-                </div>
-                <div id="${moduleId}" class="accordion-content" style="display: none;">
-                  <table class="permissions-table">
-                    <thead>
-                      <tr>
-                        <th>Modelo</th>
-                        <th>Leer</th>
-                        <th>Escribir</th>
-                        <th>Crear</th>
-                        <th>Eliminar</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-            `;
+            // Agrupar permisos por módulo
+            const moduleGroups = {};
+            accessRights.forEach(right => {
+              const moduleName = right.module_name || 'Sin módulo';
+              if (!moduleGroups[moduleName]) {
+                moduleGroups[moduleName] = [];
+              }
+              moduleGroups[moduleName].push(right);
+            });
             
-            moduleRights.forEach(right => {
+            let html = '';
+            
+            // Crear acordeones para cada módulo
+            Object.keys(moduleGroups).sort().forEach(moduleName => {
+              const moduleRights = moduleGroups[moduleName];
+              const moduleId = 'module-' + moduleName.replace(/\s+/g, '-').toLowerCase();
+              
               html += `
-                <tr>
-                  <td>${right.model_name} (${right.model})</td>
-                  <td class="checkbox-cell">${right.perm_read ? '✓' : '✗'}</td>
-                  <td class="checkbox-cell">${right.perm_write ? '✓' : '✗'}</td>
-                  <td class="checkbox-cell">${right.perm_create ? '✓' : '✗'}</td>
-                  <td class="checkbox-cell">${right.perm_unlink ? '✓' : '✗'}</td>
-                </tr>
+                <div class="accordion-item">
+                  <div class="accordion-header" onclick="toggleAccordion('${moduleId}')">
+                    <span class="accordion-title">${moduleName}</span>
+                    <span class="accordion-count badge badge-light">${moduleRights.length}</span>
+                    <span class="accordion-icon">▼</span>
+                  </div>
+                  <div id="${moduleId}" class="accordion-content" style="display: none;">
+                    <table class="permissions-table">
+                      <thead>
+                        <tr>
+                          <th>Modelo</th>
+                          <th>Leer</th>
+                          <th>Escribir</th>
+                          <th>Crear</th>
+                          <th>Eliminar</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+              `;
+              
+              moduleRights.forEach(right => {
+                html += `
+                  <tr>
+                    <td>${right.model_name} (${right.model})</td>
+                    <td class="checkbox-cell">${right.perm_read ? '✓' : '✗'}</td>
+                    <td class="checkbox-cell">${right.perm_write ? '✓' : '✗'}</td>
+                    <td class="checkbox-cell">${right.perm_create ? '✓' : '✗'}</td>
+                    <td class="checkbox-cell">${right.perm_unlink ? '✓' : '✗'}</td>
+                  </tr>
+                `;
+              });
+              
+              html += `
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               `;
             });
             
-            html += `
-                    </tbody>
-                  </table>
+            // Si hay información de paginación y hay más datos disponibles
+            if (result.pagination && result.pagination.hasMore) {
+              html += `
+                <div class="pagination-info" style="margin-top: 10px; text-align: center;">
+                  <p>Se muestran permisos de ${result.pagination.totalModules} módulos. Hay más módulos disponibles.</p>
+                  <button class="btn small" onclick="loadMoreGroupAccessRights(${groupId})">
+                    Cargar más permisos
+                  </button>
                 </div>
-              </div>
-            `;
-          });
-          
-          // Si hay información de paginación y hay más datos disponibles
-          if (result.pagination && result.pagination.hasMore) {
-            html += `
-              <div class="pagination-info" style="margin-top: 10px; text-align: center;">
-                <p>Se muestran permisos de ${result.pagination.totalModules} módulos. Hay más módulos disponibles.</p>
-                <button class="btn small" onclick="loadMoreGroupAccessRights(${groupId})">
-                  Cargar más permisos
-                </button>
-              </div>
-            `;
+              `;
+            }
+            
+            containerCheck.innerHTML = html;
+          } else {
+            container.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
           }
-          
-          container.innerHTML = html;
-        } else {
-          container.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+        } catch (e) {
+          logDebug('Error al procesar respuesta de permisos de acceso', { error: e.message });
+          const containerRetry = document.getElementById('group-access-rights');
+          if (containerRetry) {
+            containerRetry.innerHTML = '<div class="error">Error al procesar los datos: ' + e.message + '</div>';
+          }
         }
       })
       .withFailureHandler(function(error) {
-        container.innerHTML = '<div class="error">Error: ' + error + '</div>';
+        const errorContainer = document.getElementById('group-access-rights');
+        if (errorContainer) {
+          errorContainer.innerHTML = '<div class="error">Error: ' + error + '</div>';
+        } else {
+          logDebug('Error al cargar permisos de acceso y elemento no encontrado', { error });
+        }
       })
       .getGroupAccessRights(odooConfig, groupId);
   }
 
   // Función para cargar las reglas de registro de un grupo
   function loadGroupRecordRules(groupId) {
+    logDebug('Cargando reglas de registro para grupo', { groupId });
+    if (!groupId) {
+      logDebug('No se proporcionó ID de grupo');
+      return;
+    }
+    
     const container = document.getElementById('group-record-rules');
-    container.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando reglas de registro...</span></div>';
+    
+    if (!container) {
+      logDebug('Elemento group-record-rules no encontrado');
+      return;
+    }
+    
+    try {
+      container.innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando reglas de registro...</span></div>';
+    } catch (e) {
+      logDebug('Error al actualizar container HTML', { error: e.message });
+      return;
+    }
     
     google.script.run
       .withSuccessHandler(function(result) {
-        if (result.success) {
-          const recordRules = result.data;
-          
-          if (recordRules.length === 0) {
-            container.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este grupo no tiene reglas de registro específicas</p></div>';
+        try {
+          // Verificar que el contenedor aún exista
+          const containerCheck = document.getElementById('group-record-rules');
+          if (!containerCheck) {
+            logDebug('Elemento group-record-rules ya no existe al recibir respuesta');
             return;
           }
           
-          // Agrupar reglas por módulo
-          const moduleGroups = {};
-          recordRules.forEach(rule => {
-            const moduleName = rule.module_name || 'Sin módulo';
-            if (!moduleGroups[moduleName]) {
-              moduleGroups[moduleName] = [];
+          if (result.success) {
+            const recordRules = result.data;
+            
+            if (recordRules.length === 0) {
+              containerCheck.innerHTML = '<div class="placeholder"><i class="placeholder-icon"></i><p>Este grupo no tiene reglas de registro específicas</p></div>';
+              return;
             }
-            moduleGroups[moduleName].push(rule);
-          });
-          
-          let html = '';
-          
-          // Crear acordeones para cada módulo
-          Object.keys(moduleGroups).sort().forEach(moduleName => {
-            const moduleRules = moduleGroups[moduleName];
-            const moduleId = 'rules-module-' + moduleName.replace(/\s+/g, '-').toLowerCase();
             
-            html += `
-              <div class="accordion-item">
-                <div class="accordion-header" onclick="toggleAccordion('${moduleId}')">
-                  <span class="accordion-title">${moduleName}</span>
-                  <span class="accordion-count badge badge-light">${moduleRules.length}</span>
-                  <span class="accordion-icon">▼</span>
-                </div>
-                <div id="${moduleId}" class="accordion-content" style="display: none;">
-                  <table class="permissions-table">
-                    <thead>
-                      <tr>
-                        <th>Nombre</th>
-                        <th>Modelo</th>
-                        <th>Dominio</th>
-                        <th>Global</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-            `;
+            // Agrupar reglas por módulo
+            const moduleGroups = {};
+            recordRules.forEach(rule => {
+              const moduleName = rule.module_name || 'Sin módulo';
+              if (!moduleGroups[moduleName]) {
+                moduleGroups[moduleName] = [];
+              }
+              moduleGroups[moduleName].push(rule);
+            });
             
-            moduleRules.forEach(rule => {
+            let html = '';
+            
+            // Crear acordeones para cada módulo
+            Object.keys(moduleGroups).sort().forEach(moduleName => {
+              const moduleRules = moduleGroups[moduleName];
+              const moduleId = 'rules-module-' + moduleName.replace(/\s+/g, '-').toLowerCase();
+              
               html += `
-                <tr>
-                  <td>${rule.name}</td>
-                  <td>${rule.model_name} (${rule.model})</td>
-                  <td><pre>${rule.domain_force}</pre></td>
-                  <td class="checkbox-cell">${rule.global ? '✓' : '✗'}</td>
-                </tr>
+                <div class="accordion-item">
+                  <div class="accordion-header" onclick="toggleAccordion('${moduleId}')">
+                    <span class="accordion-title">${moduleName}</span>
+                    <span class="accordion-count badge badge-light">${moduleRules.length}</span>
+                    <span class="accordion-icon">▼</span>
+                  </div>
+                  <div id="${moduleId}" class="accordion-content" style="display: none;">
+                    <table class="permissions-table">
+                      <thead>
+                        <tr>
+                          <th>Nombre</th>
+                          <th>Modelo</th>
+                          <th>Dominio</th>
+                          <th>Global</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+              `;
+              
+              moduleRules.forEach(rule => {
+                html += `
+                  <tr>
+                    <td>${rule.name}</td>
+                    <td>${rule.model_name} (${rule.model})</td>
+                    <td><pre>${rule.domain_force}</pre></td>
+                    <td class="checkbox-cell">${rule.global ? '✓' : '✗'}</td>
+                  </tr>
+                `;
+              });
+              
+              html += `
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               `;
             });
             
-            html += `
-                    </tbody>
-                  </table>
+            // Si hay información de paginación y hay más datos disponibles
+            if (result.pagination && result.pagination.hasMore) {
+              html += `
+                <div class="pagination-info" style="margin-top: 10px; text-align: center;">
+                  <p>Se muestran reglas de ${result.pagination.totalModules} módulos. Hay más módulos disponibles.</p>
+                  <button class="btn small" onclick="loadMoreGroupRecordRules(${groupId})">
+                    Cargar más reglas
+                  </button>
                 </div>
-              </div>
-            `;
-          });
-          
-          // Si hay información de paginación y hay más datos disponibles
-          if (result.pagination && result.pagination.hasMore) {
-            html += `
-              <div class="pagination-info" style="margin-top: 10px; text-align: center;">
-                <p>Se muestran reglas de ${result.pagination.totalModules} módulos. Hay más módulos disponibles.</p>
-                <button class="btn small" onclick="loadMoreGroupRecordRules(${groupId})">
-                  Cargar más reglas
-                </button>
-              </div>
-            `;
+              `;
+            }
+            
+            containerCheck.innerHTML = html;
+          } else {
+            containerCheck.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
           }
-          
-          container.innerHTML = html;
-        } else {
-          container.innerHTML = '<div class="error">Error: ' + result.error + '</div>';
+        } catch (e) {
+          logDebug('Error al procesar respuesta de reglas de registro', { error: e.message });
+          const containerRetry = document.getElementById('group-record-rules');
+          if (containerRetry) {
+            containerRetry.innerHTML = '<div class="error">Error al procesar los datos: ' + e.message + '</div>';
+          }
         }
       })
       .withFailureHandler(function(error) {
-        container.innerHTML = '<div class="error">Error: ' + error + '</div>';
+        const errorContainer = document.getElementById('group-record-rules');
+        if (errorContainer) {
+          errorContainer.innerHTML = '<div class="error">Error: ' + error + '</div>';
+        } else {
+          logDebug('Error al cargar reglas de registro y elemento no encontrado', { error });
+        }
       })
       .getGroupRecordRules(odooConfig, groupId);
   }
@@ -537,8 +764,22 @@
   // Función para alternar la visibilidad de los acordeones
   function toggleAccordion(id) {
     const content = document.getElementById(id);
+    if (!content) {
+      logDebug('Elemento acordeón no encontrado', { id });
+      return;
+    }
+    
     const header = content.previousElementSibling;
+    if (!header) {
+      logDebug('Encabezado de acordeón no encontrado', { id });
+      return;
+    }
+    
     const icon = header.querySelector('.accordion-icon');
+    if (!icon) {
+      logDebug('Icono de acordeón no encontrado', { id });
+      return;
+    }
     
     if (content.style.display === 'none') {
       content.style.display = 'block';
@@ -548,5 +789,87 @@
       icon.textContent = '▼';
     }
   }
-}
+
+  // Función para mostrar mensajes Toast
+  function showToast(message, type = 'info') {
+    // Verificar si la función ya existe en el contexto global
+    if (typeof window.showToast === 'function') {
+      window.showToast(message, type);
+      return;
+    }
+    
+    // Implementación básica si no existe
+    logDebug('Mostrando toast', { message, type });
+    
+    // Crear elemento toast si no existe
+    let toastContainer = document.getElementById('toast-container');
+    if (!toastContainer) {
+      toastContainer = document.createElement('div');
+      toastContainer.id = 'toast-container';
+      toastContainer.style.position = 'fixed';
+      toastContainer.style.bottom = '20px';
+      toastContainer.style.right = '20px';
+      toastContainer.style.zIndex = '1000';
+      document.body.appendChild(toastContainer);
+    }
+    
+    // Crear toast
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.style.backgroundColor = type === 'error' ? '#f44336' : 
+                                  type === 'warning' ? '#ff9800' : 
+                                  type === 'success' ? '#4caf50' : '#2196f3';
+    toast.style.color = 'white';
+    toast.style.padding = '12px 20px';
+    toast.style.marginBottom = '10px';
+    toast.style.borderRadius = '4px';
+    toast.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+    toast.textContent = message;
+    
+    // Añadir al contenedor
+    toastContainer.appendChild(toast);
+    
+    // Eliminar después de 5 segundos
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+    }, 5000);
+  }
+
+  // Función para recuperarse de errores
+  function recoverFromError(message) {
+    logDebug('Intentando recuperarse de error', { message });
+    showToast('Ha ocurrido un error: ' + message, 'error');
+    
+    // Restablecer los elementos de interfaz que podrían estar en estados de carga
+    const loadingElements = document.querySelectorAll('.loading');
+    loadingElements.forEach(element => {
+      const parent = element.parentNode;
+      if (parent) {
+        parent.innerHTML = '<div class="error">Error: ' + message + '</div>';
+      }
+    });
+    
+    // Intentar volver a cargar la interfaz básica
+    try {
+      if (usersAndGroups.length === 0) {
+        loadUsersAndGroups();
+      }
+    } catch (e) {
+      logDebug('Error al intentar recuperar', { error: e.message });
+    }
+  }
+  
+  // Manejar errores no capturados
+  window.onerror = function(message, source, lineno, colno, error) {
+    logDebug('Error no capturado', { message, source, lineno, colno });
+    recoverFromError(message);
+    return true; // Prevenir comportamiento por defecto
+  };
+
+  // Variables globales para almacenar datos
+  let usersAndGroups = [];
+  let selectedUserGroup = null;
+  let currentTab = 'users';  // Para saber en qué pestaña estamos
 </script>

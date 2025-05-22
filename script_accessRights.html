@@ -226,16 +226,46 @@
 
   // Actualiza el estado de los botones en el panel de permisos
   function updatePermissionButtons(tabId, loading, hasData = false) {
-    const saveBtn = document.querySelector(`#${tabId} .save-btn`);
-    const exportBtn = document.querySelector(`#${tabId} .export-btn`);
+    const buttons = document.querySelectorAll(`#${tabId}-buttons .action-btn`);
     
-    if (saveBtn) {
-      saveBtn.disabled = loading || !hasData;
-      saveBtn.innerHTML = loading ? '<div class="spinner-small"></div> Guardando...' : 'Guardar';
+    buttons.forEach(button => {
+      if (button.classList.contains('add-btn')) {
+        // El botón de añadir siempre está disponible
+        button.disabled = loading;
+      } else {
+        // Los demás botones requieren datos
+        button.disabled = loading || !hasData;
+      }
+    });
+  }
+  
+  // Función para alternar la visibilidad de los acordeones (duplicada para asegurar disponibilidad)
+  function toggleAccordion(id) {
+    logDebug('Alternando acordeón en accessRights', { id });
+    const content = document.getElementById(id);
+    if (!content) {
+      logDebug('Elemento acordeón no encontrado', { id });
+      return;
     }
     
-    if (exportBtn) {
-      exportBtn.disabled = loading || !hasData;
+    const header = content.previousElementSibling;
+    if (!header) {
+      logDebug('Encabezado de acordeón no encontrado', { id });
+      return;
+    }
+    
+    const icon = header.querySelector('.accordion-icon');
+    if (!icon) {
+      logDebug('Icono de acordeón no encontrado', { id });
+      return;
+    }
+    
+    if (content.style.display === 'none') {
+      content.style.display = 'block';
+      icon.textContent = '▲';
+    } else {
+      content.style.display = 'none';
+      icon.textContent = '▼';
     }
   }
 </script>
